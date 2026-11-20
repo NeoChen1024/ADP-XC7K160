@@ -1,0 +1,12 @@
+PHY at address 0: control 3100, status 786d, link partner c1e1
+link up, autonegotiation complete; the best the partner offers is 100BASE-TX full duplex
+MAC_RX_CLK 24.999652 MHz, MAC_TX_CLK 25.001718 MHz, MAC_PHY_LINKSTS reads 0; frames in the last second: 42
+ARP: the board asked for the host and was answered
+ping, 56 bytes of data: 10 packets transmitted, 10 received, 0% packet loss, time 1805ms; rtt min/avg/max/mdev = 32.770/37.870/72.251/11.495 ms
+ping, 1472 bytes of data: 3 packets transmitted, 3 received, 0% packet loss, time 2004ms; rtt min/avg/max/mdev = 316.338/582.231/1054.915/335.107 ms, pipe 2
+UDP there and back: 20 of 20 datagrams came back as sent (1 to 1472 bytes)
+board to host, 20000 frames of 1518 bytes: 20000 came whole, 0 came changed, in 2.45 s (99.0 Mbit/s of frames)
+board to host, 20000 frames of 64 bytes: 20000 came whole, 0 came changed, in 0.13 s (79.6 Mbit/s of frames)
+host to board, 10000 datagrams of 1472 bytes in 2.05 s: the board counted 10000 frames to its address whole and 0 damaged
+host to board, 20000 datagrams of 18 bytes in 1.00 s: the board counted 20000 frames to its address whole and 0 damaged
+what the board's side answered: 1 ARP request, 21 UDP datagram, 13 echo request, 1 passed over

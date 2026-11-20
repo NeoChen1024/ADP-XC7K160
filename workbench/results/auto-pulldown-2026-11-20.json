@@ -1,0 +1,155 @@
+{
+ "i2c": {
+  "idle": [
+   1,
+   1
+  ],
+  "answering": [
+   "0x50"
+  ],
+  "0x50": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+ },
+ "mdio": {
+  "10/100": {
+   "0": {
+    "id": "0181 b8b1",
+    "name": "Davicom DM9161B or C",
+    "registers": [
+     "3100",
+     "786d",
+     "0181",
+     "b8b1",
+     "01e1",
+     "c1e1",
+     "000b"
+    ]
+   }
+  },
+  "gigabit": {}
+ },
+ "eth": {
+  "phy": 0,
+  "control_found": "3100",
+  "control": "3100",
+  "status": "786d",
+  "partner": "c1e1",
+  "link": true,
+  "best": "100BASE-TX full duplex",
+  "hertz": {
+   "MAC_RX_CLK": 24999651,
+   "MAC_TX_CLK": 25001716,
+   "MAC_RX_DV": 22,
+   "MAC_CRS": 22
+  },
+  "received": true,
+  "loopback_ok": true
+ },
+ "sd": {
+  "cd": 0,
+  "wp": 0,
+  "power_idle": 1,
+  "lines_power_0": [
+   1,
+   1,
+   1,
+   1,
+   1
+  ],
+  "resets_power_0": [],
+  "lines_power_1": [
+   1,
+   1,
+   1,
+   1,
+   1
+  ],
+  "resets_power_1": [],
+  "cmd0_power_1": "01",
+  "power_on_level": 1,
+  "ocr": "c0ff8000",
+  "CID": "0353445348333247808abac41d0192e9",
+  "CID_crc_ok": true,
+  "CSD": "400e0032db790000edc87f800a4040e5",
+  "CSD_crc_ok": true,
+  "bytes": 31914983424
+ },
+ "audio": {
+  "bclk_reset_n_0": 0,
+  "bclk_reset_n_1": 12288826,
+  "registers": {
+   "00": "0190",
+   "02": "8000",
+   "04": "8000",
+   "18": "8808",
+   "1a": "0000",
+   "1c": "8000",
+   "26": "000f",
+   "28": "0a07",
+   "2a": "0410",
+   "2c": "bb80",
+   "32": "bb80",
+   "7c": "414c",
+   "7e": "4770"
+  },
+  "id": "414c4770",
+  "write": true,
+  "loop": {
+   "silence": {
+    "left": [
+     321,
+     329
+    ],
+    "right": [
+     -55,
+     -46
+    ],
+    "frames": 24124
+   },
+   "both tones": {
+    "left": [
+     -4190,
+     4844
+    ],
+    "right": [
+     -4687,
+     4590
+    ],
+    "frames": 24123
+   },
+   "the left tone": {
+    "left": [
+     -4191,
+     4844
+    ],
+    "right": [
+     -53,
+     -45
+    ],
+    "frames": 24123
+   },
+   "the right tone": {
+    "left": [
+     321,
+     330
+    ],
+    "right": [
+     -4686,
+     4591
+    ],
+    "frames": 24125
+   }
+  }
+ },
+ "sw12": {
+  "RS0": "does not follow FA23: reads [0, 0, 0, 0]",
+  "RS1": "does not follow FA24: reads [0, 0, 0, 0]"
+ },
+ "rts": {
+  "cts": [
+   0,
+   1,
+   0,
+   1
+  ]
+ }
+}

@@ -1,0 +1,674 @@
+{
+ "SW1": {
+  "first": 1,
+  "now": 0,
+  "rose": null,
+  "fell": 1.5e-07
+ },
+ "SW2": {
+  "first": 1,
+  "now": 0,
+  "rose": null,
+  "fell": 1.5e-07
+ },
+ "SW3": {
+  "first": 1,
+  "now": 0,
+  "rose": null,
+  "fell": 1.5e-07
+ },
+ "SW4": {
+  "first": 1,
+  "now": 0,
+  "rose": null,
+  "fell": 1e-07
+ },
+ "FA25": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "VRN_33": {
+  "first": 1,
+  "now": 1,
+  "rose": null,
+  "fell": null
+ },
+ "VRP_33": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "TP59": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "TP60": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "CFC_NCD1": {
+  "first": 1,
+  "now": 1,
+  "rose": null,
+  "fell": null
+ },
+ "CFC_NCD2": {
+  "first": 1,
+  "now": 1,
+  "rose": null,
+  "fell": null
+ },
+ "HOST_RTS": {
+  "first": 1,
+  "now": 0,
+  "rose": null,
+  "fell": 0.6870386
+ },
+ "SW5": {
+  "first": 1,
+  "now": 0,
+  "rose": null,
+  "fell": 2.5e-07
+ },
+ "SW6": {
+  "first": 1,
+  "now": 0,
+  "rose": null,
+  "fell": 2.5e-07
+ },
+ "SW7": {
+  "first": 1,
+  "now": 0,
+  "rose": null,
+  "fell": 2e-07
+ },
+ "SW8": {
+  "first": 1,
+  "now": 0,
+  "rose": null,
+  "fell": 3.5e-07
+ },
+ "PORn": {
+  "first": 0,
+  "now": 1,
+  "rose": 0.3870483,
+  "fell": null
+ },
+ "SYS_RSTn": {
+  "first": 1,
+  "now": 1,
+  "rose": null,
+  "fell": null
+ },
+ "GPIO0_ENn": {
+  "first": 1,
+  "now": 1,
+  "rose": null,
+  "fell": null
+ },
+ "PCIE_PERST_N": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "OSCCLK2": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "RTC_32K": {
+  "first": 1,
+  "now": 1,
+  "rose": 2.245e-05,
+  "fell": 7.2e-06
+ },
+ "F_BUSY_B": {
+  "first": 1,
+  "now": 1,
+  "rose": null,
+  "fell": null
+ },
+ "RS0": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "RS1": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "FA23": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "FA24": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "S2_RXD": {
+  "first": 1,
+  "now": 1,
+  "rose": null,
+  "fell": null
+ },
+ "S2_TXD": {
+  "first": 1,
+  "now": 0,
+  "rose": null,
+  "fell": 0.0
+ },
+ "S1_RTS": {
+  "first": 1,
+  "now": 0,
+  "rose": null,
+  "fell": 5e-08
+ },
+ "I2C_SCL": {
+  "first": 1,
+  "now": 1,
+  "rose": null,
+  "fell": null
+ },
+ "I2C_SDA": {
+  "first": 1,
+  "now": 1,
+  "rose": null,
+  "fell": null
+ },
+ "SD_CDn": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "SD_WPn": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "SD_PWR_ON": {
+  "first": 1,
+  "now": 1,
+  "rose": null,
+  "fell": null
+ },
+ "SD_CLK": {
+  "first": 1,
+  "now": 0,
+  "rose": null,
+  "fell": 5e-08
+ },
+ "SD_CMD": {
+  "first": 1,
+  "now": 1,
+  "rose": null,
+  "fell": null
+ },
+ "SD_DAT0": {
+  "first": 1,
+  "now": 1,
+  "rose": null,
+  "fell": null
+ },
+ "SD_DAT1": {
+  "first": 1,
+  "now": 1,
+  "rose": null,
+  "fell": null
+ },
+ "SD_DAT2": {
+  "first": 1,
+  "now": 1,
+  "rose": null,
+  "fell": null
+ },
+ "SD_DAT3": {
+  "first": 1,
+  "now": 1,
+  "rose": null,
+  "fell": null
+ },
+ "MAC_RX_CLK": {
+  "first": 1,
+  "now": 1,
+  "rose": 0.38704895,
+  "fell": 3e-07
+ },
+ "MAC_RX_DV": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "MAC_RX_ER": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "MAC_RXD0": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "MAC_RXD1": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "MAC_RXD2": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "MAC_RXD3": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "MAC_TX_CLK": {
+  "first": 0,
+  "now": 1,
+  "rose": 0.38704895,
+  "fell": 0.38704905
+ },
+ "MAC_CRS": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "MAC_COL": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "MAC_PHY_LINKSTS": {
+  "first": 1,
+  "now": 0,
+  "rose": null,
+  "fell": 2e-07
+ },
+ "MAC_MDC": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "MAC_MDIO": {
+  "first": 1,
+  "now": 1,
+  "rose": null,
+  "fell": null
+ },
+ "PHY_PWRDWN": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "PHY_RX_CLK": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "PHY_TX_CLK": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "PHY_RXDV": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "PHY_RXER": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "PHY_CRS": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "PHY_COL": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "PHY_RXD0": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "PHY_RXD1": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "PHY_RXD2": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "PHY_RXD3": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "PHY_MDC": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "PHY_MDIO": {
+  "first": 1,
+  "now": 1,
+  "rose": null,
+  "fell": null
+ },
+ "USB_CLKOUT": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "USB_LINESTATE0": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "USB_LINESTATE1": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "USB_RXVALID": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "USB_RXACTIVE": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "USB_RXERROR": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "USB_TXREADY": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "USB_VBUSVLD": {
+  "first": 1,
+  "now": 0,
+  "rose": null,
+  "fell": 5e-08
+ },
+ "USB_SESSVLD": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "USB_SESSEND": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "USB_IDDIG": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "USB_HOSTDISC": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "USB_FAULTn": {
+  "first": 1,
+  "now": 0,
+  "rose": null,
+  "fell": 0.0
+ },
+ "U_RCV": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "U_VP": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "U_VM": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AC97_RSTn": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AC97_BCLK": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AC97_SDI": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "VRN_32": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "VRP_32": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AB20": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "Y12": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "Y13": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AA12": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AA13": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AB11": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AC11": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AC13": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AD10": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AD11": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AD13": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AE8": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AE10": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AE11": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AE12": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AE13": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AF8": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AF9": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AF10": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AF12": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "AF13": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ },
+ "SYSCLK/16": {
+  "first": 1,
+  "now": 1,
+  "rose": 5e-08,
+  "fell": 0.0
+ },
+ "CKOUT1/16": {
+  "first": 0,
+  "now": 1,
+  "rose": 0.0,
+  "fell": 1e-07
+ },
+ "PCIE_CLK/16": {
+  "first": 0,
+  "now": 0,
+  "rose": null,
+  "fell": null
+ }
+}

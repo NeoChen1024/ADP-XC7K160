@@ -1,0 +1,8 @@
+workbench.py buttons, with the pull-up bitstream, each button pressed by hand, 2026-11-20:
+
+  SW1 to SW8                1 at rest, 0 while pressed (each on its own channel)
+  HW_RST_SW1                SYS_RSTn is 1 at rest and 0 while pressed; the workbench kept answering
+  PWR_SW1                   GPIO0_ENn is 1 at rest and 0 while pressed
+  PORn                      moved with neither
+
+The digits showed "Lr": 7SEG2, where the workbench puts the L, is the left one.

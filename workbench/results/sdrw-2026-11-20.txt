@@ -1,0 +1,9 @@
+over SPI: 62333952 blocks of 512 bytes (31.9 GB); the card checks every CRC from here on
+block 0 read, its CRC right; it ends in 55 AA, as a partition table does
+what 8 blocks hold is in sdrw-kept.json until they are back as they were
+over SPI: 8 blocks, from block 1 to block 62333951, each read, written with a pattern, read back, and put back as it was, in 21 s: all right
+over SPI: a block sent with a wrong CRC: the card said 11 (11 is 'CRC wrong'), and the block is as it was
+on its own bus, four lines wide: the card answers at address aaaa; its CID is the one SPI gave
+on its own bus: blocks [1, 24190592], each read on four lines as SPI read it with every line's CRC right, written, read back and put back: all right
+on its own bus: a block sent with SD_DAT2's CRC wrong: the card said 5 (5 is 'CRC wrong'), and after its supply was off and on the block is as it was
+all right: SD_CMD and SD_DAT0 to SD_DAT3 carry data both ways, and every block is as it was
