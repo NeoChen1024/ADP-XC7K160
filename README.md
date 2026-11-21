@@ -266,14 +266,18 @@ The contents of U4 (factory state; read completely on 2026-11-20, two reads agre
 The DVD that came with the board (AndeSight and the BSP) does not contain these images. The backup
 of the owner is the only copy.
 
-The write of 2026-11-21 **[measured]** changed the start of this table:
+Two writes on 2026-11-21 **[measured]** changed the start of this table:
 
-- `jtag/flash_u4.sh` wrote the LiteX SoC of section 15 (two NaxRiscv cores, 512 KiB L2). Its
-  compressed bitstream has 4,134,256 bytes, at `0x0000000–0x03F14E3`.
-- Vivado erased only the blocks of the file: `0x0000000–0x03FFFFF`, 32 blocks of 128 KiB.
-- The end of the factory bitstream, `0x0400000–0x0680000`, is still in U4. Alone it is not a
+- The first write put the LiteX SoC of section 15 (two NaxRiscv cores, 512 KiB L2), without the
+  XADC. Its bitstream has 4,134,256 bytes, at `0x0000000–0x03F14E3`. Vivado erased
+  `0x0000000–0x03FFFFF`, 32 blocks of 128 KiB. The commands of `jtag/flash_u4.sh`, from a script
+  outside the repository, made this write.
+- The second write, with `jtag/flash_u4.sh`, put the same SoC with the XADC. Its bitstream has
+  4,980,172 bytes, at `0x0000000–0x04BFD3F`. Vivado erased `0x0000000–0x04BFFFF`, 38 blocks.
+  **U4 now holds this SoC.**
+- The end of the factory bitstream, `0x04C0000–0x0680000`, is still in U4. Alone it is not a
   bitstream.
-- The write did not address the upper half. That half was not read again after the write.
+- Neither write addressed the upper half. That half was not read again after the writes.
 
 To read U4 through JTAG, use `flash-probes/`:
 
@@ -302,9 +306,10 @@ VIVADO=... XVCD=... sh jtag/flash_u4.sh --owner-asked design.bit
 - If the write fails, the FPGA does not configure at power-on. JTAG still works, so `load.sh` and a
   new write still work.
 
-Result **[measured, 2026-11-21]**: the erase, the write and the verify passed. Through xvc-pico the
-complete run took 109 seconds. After PROGRAM_B, DONE was 1. The SoC then booted Debian from the SD
-card with 2 CPUs and the 512 KiB L2.
+Result **[measured, 2026-11-21]**: in both writes, the erase, the write and the verify passed.
+Through xvc-pico, the complete runs took 109 and 130 seconds. After PROGRAM_B, DONE was 1. Each
+SoC then booted Debian from the SD card with 2 CPUs and the 512 KiB L2. After the second write,
+`sensors` showed the values of the XADC.
 
 To restore the factory design, convert the first `0x680000` bytes of the backup to the byte order of
 a `.bit` file (see above). Then write them at address 0, for example with `write_cfgmem -loaddata`.
@@ -1015,7 +1020,7 @@ The SoC has four CSR groups besides the standard ones:
 |---|---|
 | `buttons` | 0 to 7: SW1 to SW8 pushed. 8: `PWR_SW1` pushed |
 | `status` | 0: `PORn` high (the peripherals are out of reset). 1: a card is in the SD socket (`SD_CDn` low) |
-| `xadc` | `temperature`, `vccint`, `vccaux`, `vccbram`: the last raw 12-bit value of each. The XADC samples them all the time (`S7SystemMonitor` of LiteX). The SoC that was written into U4 on 2026-11-21 has no XADC |
+| `xadc` | `temperature`, `vccint`, `vccaux`, `vccbram`: the last raw 12-bit value of each. The XADC samples them all the time (`S7SystemMonitor` of LiteX) |
 | `seven_seg` | 0 to 6: segments A to G of 7SEG1 (right). 7: its decimal point. 8 to 15: the same for 7SEG2 (left). A 1 lights the segment |
 
 `HW_RST_SW1` resets the MMCM, and thus the SoC. The BIOS console is 115200 8N1 on COM1. The SoC
