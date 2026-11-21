@@ -309,7 +309,8 @@ VIVADO=... XVCD=... sh jtag/flash_u4.sh --owner-asked design.bit
 Result **[measured, 2026-11-21]**: in both writes, the erase, the write and the verify passed.
 Through xvc-pico, the complete runs took 109 and 130 seconds. After PROGRAM_B, DONE was 1. Each
 SoC then booted Debian from the SD card with 2 CPUs and the 512 KiB L2. After the second write,
-`sensors` showed the values of the XADC.
+`sensors` showed the values of the XADC. Later the same day, the FPGA loaded the SoC from U4
+after a power cycle.
 
 To restore the factory design, convert the first `0x680000` bytes of the backup to the byte order of
 a `.bit` file (see above). Then write them at address 0, for example with `write_cfgmem -loaddata`.
@@ -872,7 +873,6 @@ Other items:
   238 kHz and 21.875 MHz, and not at 50 MHz (high speed).
 - The margin above the -1 marking (400 MHz, DDR3-1600): there is a result for one chip at room
   temperature only.
-- A boot from U4 after a power cycle (section 5): only PROGRAM_B was tried after the write.
 - Debian on NaxRiscv (section 15): it ran for less than one hour, at room temperature. The write
   speed of the SD card under Linux was not measured alone.
 - LiteX at DDR3-1400 (section 15): the read window is about 5 IDELAY taps. The memory had one test
@@ -1229,7 +1229,8 @@ Both builds have the 128 KiB L2. With the 512 KiB L2, the estimate for 2 cores i
 
 The software, all outside this repository:
 
-- Linux 6.18.64: `make ARCH=riscv defconfig`, and then `SERIAL_LITEUART`,
+- Linux 6.18.64 (the first card; the present card uses `adp.config`, see below):
+  `make ARCH=riscv defconfig`, and then `SERIAL_LITEUART`,
   `SERIAL_LITEUART_CONSOLE`, `LITEX_SOC_CONTROLLER`, `LITEX_LITEETH` and `MMC_LITEX` set to `y`.
   The compiler was `riscv64-linux-gnu-gcc` 16.2.1 of the host.
 - OpenSBI v1.9: `make PLATFORM=generic FW_TEXT_START=0x40f00000 FW_JUMP=y FW_JUMP_ADDR=0x41000000
@@ -1304,6 +1305,52 @@ the same script. The script ran `sysbench memory` (reads, one thread, 512 MiB in
 - Blocks of 1 MiB and more come from the DDR3 with both sizes, at about 195 MiB/s.
 - The 7z rating increased by 5% for one thread and by 2% for two threads.
 - With the 512 KiB L2, the third boot took 16.0 s + 85.0 s.
+
+### The kernel and the root file system after 2026-11-21
+
+The first card had ext4 and a kernel from the defconfig. The present card has F2FS, a swap
+partition, and a kernel from `litex/linux/adp.config`:
+
+- The fragment goes over the defconfig with `scripts/kconfig/merge_config.sh` (its first lines
+  give the commands). The kernel version is then `6.18.64-adp`.
+- The fragment removes the platforms of other vendors, PCI, USB and DRM. It keeps sound, for the
+  AC97 codec. The `Image` became 25.2 MB, from 27.4 MB.
+- It adds F2FS with LZ4 compression, zswap (LZ4), WireGuard, overlayfs, squashfs, nftables, PSI,
+  `HZ_100` and `PREEMPT_VOLUNTARY`. The console log level stays 7.
+- `ARCH_STARFIVE` follows `SOC_STARFIVE`. Thus the fragment must clear `SOC_STARFIVE`.
+
+The card:
+
+| Partition | Size | Contents |
+|---|---|---|
+| 1 | 256 MiB | FAT32 `BOOT`: `boot.json`, `opensbi.bin`, `Image`, `linux.dtb` |
+| 2 | 28.5 GiB | F2FS `rootfs`, made with `mkfs.f2fs -O extra_attr,inode_checksum,sb_checksum,compression` |
+| 3 | 1 GiB | swap, label `swap` |
+
+The bootargs and `/etc/fstab` give the F2FS options:
+
+- bootargs: `root=/dev/mmcblk0p2 rootfstype=f2fs rootflags=lazytime,compress_algorithm=lz4,compress_extension=*,compress_chksum,atgc,gc_merge rw`
+- fstab: `noatime` and the same F2FS options. `noatime` is not an option of F2FS, so it is not in
+  `rootflags`.
+- F2FS refuses to switch `atgc` at a remount. Without `rootflags`, `systemd-remount-fs` failed,
+  and the root stayed without compression. Thus the options must be in `rootflags`.
+
+The rootfs also has `f2fs-tools` and `fake-hwclock`. journald keeps its files in RAM
+(`Storage=volatile`, `RuntimeMaxUse=32M`). `apt-daily.timer` and `apt-daily-upgrade.timer` are
+masked. `mkrootfs.sh` and `mkdisk.sh` still make the ext4 card of 2026-11-21. The conversion was
+made on the host:
+
+1. Mount partition 2 of the old card read-only, and copy it with `rsync -aHAX --numeric-ids`.
+2. Install the packages in the copy, through `chroot` and qemu-user.
+3. Make the new partitions, `mkfs.f2fs` and `mkswap`.
+4. Mount the F2FS with the compression options, and copy the files back with `rsync`.
+5. Put the new `Image` and `linux.dtb` on partition 1.
+
+Result **[measured, 2026-11-21]**: `diff -rq` found no difference after the copy, and
+`fsck.f2fs` found no error. F2FS compressed 12,167 files and saved 33,123 blocks of 4 KiB. The
+board then booted from U4 after a power cycle, and Debian booted from the F2FS. With the
+`rootflags`, no unit failed, a new file got the compression flag, and the boot took 16.8 s + 86.6 s.
+The swap was active, with zswap and LZ4.
 
 ### The XADC as a Linux hwmon device
 
