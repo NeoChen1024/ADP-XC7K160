@@ -103,7 +103,8 @@ Tool: Vivado 2025.2.1. Its free license includes this part.
 
 ## 2. Speed grade and the real speed
 
-The chip is marked -1. The DDR3-1600 designs here are built as **-2**. The reasons and the evidence:
+The chip is marked -1. The DDR3-1600 designs and the LiteX designs (section 15) here are built as
+**-2**. The reasons and the evidence:
 
 - For -1 in the FB package, MIG permits DDR3-800 at most. DDR3-1600 needs the -2 settings (section 8).
 - A small CPU core was synthesized alone (out of context). As -1 it closed timing at 330 MHz and not
@@ -831,6 +832,9 @@ Other items:
 - The SD card was tested only at 238 kHz, and only with one card.
 - The margin above the -1 marking (400 MHz, DDR3-1600): there is a result for one chip at room
   temperature only.
+- LiteX at DDR3-1400 (section 15): the read window is about 5 IDELAY taps. The memory had one test
+  of all 1 GiB and at least two runs of 54 GiB of BIST. Long use and other temperatures were not
+  tested.
 - The data lines of the LCD, IDE/CF, AICE, trace and PCIe were not used.
 
 Items that the workbench confirmed on 2026-11-20:
@@ -977,7 +981,8 @@ The SoC has two CSRs besides the standard ones:
 The DDR3:
 
 - LiteDRAM controls it with `K7DDRPHY` at a ratio of 1:4. Thus the data rate is 8 times the
-  system clock: DDR3-800 at 100 MHz.
+  system clock. The default is 175 MHz: DDR3-1400. DDR3-1600 is not possible (see below).
+- The default speed grade is -2 (section 2).
 - The MMCM uses `SYSCLK` (200 MHz, `DIFF_SSTL15`). It makes the system clock, the 4× clock and
   the 200 MHz reference of `IDELAYCTRL`.
 - The controller uses the timings of `MT41J256M16`. MIG uses the same substitute for the
@@ -1024,8 +1029,53 @@ Result without the DDR3 **[measured, 2026-11-21]**: the same design was built wi
 the design used 2,183 LUT and 1,777 FF. After a load, the BIOS banner came on COM1, and the memory
 test of the 64 KiB main RAM passed.
 
-These are results for one chip at room temperature. A rate above DDR3-800 was not tried with
-LiteX.
+### Speed of the DDR3 with LiteX
+
+`K7DDRPHY` sends the 4× clock through a BUFG. In the timing report of Vivado, the minimum period of
+`BUFG/I` is 1.408 ns for -2, which is 710 MHz. Thus the data rate cannot be more than 1420 MT/s.
+
+The rates that were tried on 2026-11-21, all as -2 with `--with-bist`:
+
+| Rate | System clock | Result of the build |
+|---|---|---|
+| 1600 | 200 MHz | Timing not met. Pulse width slack −0.158 ns at the BUFG of the 4× clock. Setup slack −0.203 ns in the system clock |
+| 1333 | 166.67 MHz | No build. LiteX found no MMCM setting that makes 166.67, 666.67 and 200 MHz from 200 MHz |
+| **1400** | 175 MHz | Setup slack +0.339 ns, hold slack +0.091 ns, pulse width slack +0.020 ns. 7,049 LUT, 5,449 FF. The MMCM has its VCO at 1400 MHz and divides by 8, 2 and 7 |
+| 800 | 100 MHz | Setup slack +1.583 ns, hold slack +0.074 ns. 6,970 LUT, 5,409 FF |
+
+Results on the board **[measured, 2026-11-21]**. The BIST is the generator and the checker of
+LiteDRAM on the native port (256 bits). It does not use the CPU.
+
+| Rate | CL / CWL | BIST write | BIST read | Peak | CPU write / read (`mem_speed`) |
+|---|---|---|---|---|---|
+| 800 | 6 / 5 | 2,568 MiB/s | 2,555 MiB/s | 3,052 MiB/s | 63.7 / 62.4 MiB/s |
+| 1400 | 11 / 8 | 4,659 MiB/s | 4,615 MiB/s | 5,341 MiB/s | 112.4 / 108.5 MiB/s |
+
+- The BIST figures are from `sdram_bist 1024 0`, which ran for 25 seconds. With random base
+  addresses (`sdram_bist 1024 1`), the figures were 2,562 and 2,553 MiB/s at 800, and 4,605 and
+  4,623 MiB/s at 1400. The BIST found no errors. Each run tested about 30 GiB at 800 and 54 GiB at
+  1400.
+- The BIST uses bursts of 32 KiB at 128 base addresses. It does not cover all of the memory.
+  `sdram_hw_test 0 0x40000000 1024` covers all of the 1 GiB. It found 0 errors at both rates, in
+  125 seconds each. The CPU starts each burst, so this time does not show the speed of the memory.
+- The CPU figures are much lower because of the CPU and its bus. Each store of VexRiscv is one
+  32-bit Wishbone transfer. The same SoC with 64 KiB of block RAM as main RAM gave 162.8 and 84.8
+  MiB/s.
+
+Calibration at 1400, after 6 JTAG loads **[measured, 2026-11-21]**:
+
+- All 6 calibrations completed, and the memory test of 2 MiB passed after each.
+- After the first load, the Cmd/Clk scan passed at all 8 positions. After each load, the BIOS set
+  the Cmd/Clk delay to 1 tap, and the write latency was 0 for each byte.
+- Read leveling found windows of 5 or 6 taps in bitslips 4, 5 and 6. At 800 the windows were 12 to
+  15 taps.
+- The BIOS selected bitslip 4 for all bytes after 4 loads. After each of the other 2 loads, it
+  selected bitslip 5 or 6 for two bytes. The test of all 1 GiB ran only after a load with bitslip 4
+  for all bytes.
+- One IDELAY tap is 78 ps with a 200 MHz reference (UG471). Thus a window of 5 taps is about 0.39 ns. One
+  bit at 1400 MT/s is 0.71 ns.
+
+These are results for one chip at room temperature.
 
 Problems that were found **[measured, 2026-11-21]**:
 

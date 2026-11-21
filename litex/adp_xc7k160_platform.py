@@ -129,8 +129,8 @@ class Platform(Xilinx7SeriesPlatform):
     default_clk_name   = "clk200"
     default_clk_period = 1e9/200e6
 
-    def __init__(self, speedgrade=-1, toolchain="vivado"):
-        # The chip is marked -1. Section 2 says when the designs here are built as -2.
+    def __init__(self, speedgrade=-2, toolchain="vivado"):
+        # The chip is marked -1. The LiteX designs are built as -2: section 2 gives the evidence.
         Xilinx7SeriesPlatform.__init__(self, f"xc7k160tfbg676{speedgrade}", _io_list,
             name="adp_xc7k160", toolchain=toolchain)
         self.speedgrade = speedgrade

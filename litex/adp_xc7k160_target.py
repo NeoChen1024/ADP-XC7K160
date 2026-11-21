@@ -2,10 +2,14 @@
 #
 # LiteX SoC for the Andes AndeShape ADP-XC7K160: a CPU, the BIOS, the UART and the 1 GiB DDR3.
 #
-#   python3 adp_xc7k160_target.py --build [--load] [--sys-clk-freq 100e6] [--output-dir DIR] ...
+#   python3 adp_xc7k160_target.py --build [--load] [--sys-clk-freq 175e6] [--output-dir DIR] ...
 #
 # The DDR3 is main RAM (LiteDRAM, K7DDRPHY at 1:4), so its data rate is 8 times the system clock:
-# DDR3-800 at 100 MHz. With --integrated-main-ram-size the SoC has no DDR3 controller.
+# DDR3-1400 at the default 175 MHz, DDR3-800 at 100 MHz. The 4x clock goes through a BUFG, so
+# 710 MHz (-2) limits the rate to DDR3-1420 (README section 15).
+#
+# With --integrated-main-ram-size the SoC has no DDR3 controller. With --with-bist the SoC also has
+# the LiteDRAM BIST on the native port (BIOS: sdram_bist, sdram_hw_test).
 #
 # Run it with the Python of a LiteX installation (README section 15). The build writes to
 # DIR, ./build/adp_xc7k160 in the current directory by default. It refuses a directory inside this
@@ -60,7 +64,7 @@ class _CRG(LiteXModule):
 
 
 class BaseSoC(SoCCore):
-    def __init__(self, sys_clk_freq=100e6, speedgrade=-1, **kwargs):
+    def __init__(self, sys_clk_freq=175e6, speedgrade=-2, with_bist=False, **kwargs):
         platform = adp_xc7k160_platform.Platform(speedgrade=speedgrade)
 
         with_dram = not kwargs.get("integrated_main_ram_size")
@@ -79,6 +83,7 @@ class BaseSoC(SoCCore):
                 phy           = self.ddrphy,
                 module        = MT41J256M16(sys_clk_freq, "1:4"),
                 l2_cache_size = kwargs.get("l2_size", 8192),
+                with_bist     = with_bist,
             )
 
         # U4 holds the factory design. With all three control lines high it does nothing (section 5).
@@ -117,11 +122,13 @@ def _timing(report):
 def main():
     from litex.build.parser import LiteXArgumentParser
     parser = LiteXArgumentParser(platform=adp_xc7k160_platform.Platform, description="LiteX SoC on ADP-XC7K160.")
-    parser.add_target_argument("--sys-clk-freq", default=100e6, type=float, help="System clock frequency.")
-    parser.add_target_argument("--speedgrade",   default=-1, type=int, choices=[-1, -2], help="Speed grade for Vivado (README section 2).")
+    parser.add_target_argument("--sys-clk-freq", default=175e6, type=float, help="System clock frequency.")
+    parser.add_target_argument("--speedgrade",   default=-2, type=int, choices=[-1, -2], help="Speed grade for Vivado (README section 2).")
+    parser.add_target_argument("--with-bist",    action="store_true", help="Add the LiteDRAM BIST.")
     args = parser.parse_args()
 
-    soc = BaseSoC(sys_clk_freq=args.sys_clk_freq, speedgrade=args.speedgrade, **parser.soc_argdict)
+    soc = BaseSoC(sys_clk_freq=args.sys_clk_freq, speedgrade=args.speedgrade, with_bist=args.with_bist,
+        **parser.soc_argdict)
     builder = Builder(soc, **parser.builder_argdict)
     if _inside(builder.output_dir, adp_xc7k160_platform._REPOSITORY):
         parser.error(f"the output directory {builder.output_dir} is inside the repository; use --output-dir")
