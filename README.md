@@ -983,7 +983,7 @@ not in this repository. Install it into a separate directory with its `litex_set
 | `versions.sh` | Lists the URL and the commit of each repository of a LiteX installation |
 | `versions.txt` | The output of `versions.sh` for the installation that built the SoC below |
 | `tftpd.py` | A TFTP server that only reads, for the network boot of the BIOS |
-| `linux/` | The files for Linux and Debian on NaxRiscv: the rootfs script, the SD image script, the initramfs and two `boot.json` |
+| `linux/` | The files for Linux and Debian on NaxRiscv: the rootfs script, the SD image script, the initramfs, two `boot.json`, and the hwmon driver of the XADC |
 
 To install LiteX and build the SoC:
 
@@ -1009,12 +1009,13 @@ VIVADO=... XVCD=... python3 $A/litex/adp_xc7k160_target.py --load
 - `--load` uses `jtag/load.sh`. No option of the platform or the target writes a flash. The SoC
   holds `FCS_B`, `FOE_B` and `FWE_B` high (section 5).
 
-The SoC has three CSRs besides the standard ones:
+The SoC has four CSR groups besides the standard ones:
 
 | CSR | Bits |
 |---|---|
 | `buttons` | 0 to 7: SW1 to SW8 pushed. 8: `PWR_SW1` pushed |
 | `status` | 0: `PORn` high (the peripherals are out of reset). 1: a card is in the SD socket (`SD_CDn` low) |
+| `xadc` | `temperature`, `vccint`, `vccaux`, `vccbram`: the last raw 12-bit value of each. The XADC samples them all the time (`S7SystemMonitor` of LiteX). The SoC that was written into U4 on 2026-11-21 has no XADC |
 | `seven_seg` | 0 to 6: segments A to G of 7SEG1 (right). 7: its decimal point. 8 to 15: the same for 7SEG2 (left). A 1 lights the segment |
 
 `HW_RST_SW1` resets the MMCM, and thus the SoC. The BIOS console is 115200 8N1 on COM1. The SoC
@@ -1298,6 +1299,33 @@ the same script. The script ran `sysbench memory` (reads, one thread, 512 MiB in
 - Blocks of 1 MiB and more come from the DDR3 with both sizes, at about 195 MiB/s.
 - The 7z rating increased by 5% for one thread and by 2% for two threads.
 - With the 512 KiB L2, the third boot took 16.0 s + 85.0 s.
+
+### The XADC as a Linux hwmon device
+
+The SoC has the XADC of LiteX (`S7SystemMonitor`). LiteDRAM does not use the XADC, unlike MIG
+(section 8). `litex_json2dts_linux` then adds a node with compatible `litex,hwmon-xadc`. That node
+gives the CSR offsets and the scale of each value.
+
+Linux 6.18 has no driver for that node. The `xilinx-xadc` driver of the kernel is for the AXI
+XADC and the XADC of Zynq, which have a different register map. Thus `litex/linux/` has a small
+hwmon driver, `litex-xadc-hwmon.c` (GPL-2.0 or MIT). It only reads the CSRs:
+
+- `temp1_input` (label `fpga`): raw × 503975 / 4096 − 273150, in millidegree Celsius.
+- `in0_input` to `in2_input` (labels `vccint`, `vccaux`, `vccbram`): raw × 3000 / 4096, in mV.
+
+To build it and install it:
+
+1. Copy `Kbuild` and `litex-xadc-hwmon.c` to a directory outside the repository.
+2. Give `make -C /path/to/linux-build M=/path/to/copy ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- modules`.
+3. Copy `litex-xadc-hwmon.ko` to `/lib/modules/$(uname -r)/updates/` on the board, and give `depmod -a`.
+
+udev then loads the module at boot, from the compatible of the node.
+
+Result **[measured, 2026-11-21]**: two cores, 512 KiB L2, -2 at 100 MHz, with the XADC. The setup
+slack was +0.635 ns, with 60,883 LUT. After a JTAG load, the module loaded, and `sensors` (from
+`lm-sensors`) showed VCCINT 1.04 V, VCCAUX 1.85 V, VCCBRAM 1.04 V and 49.8 °C. Five readings of
+`temp1_input`, one each second, were 49.7 to 50.3 °C. These agree with the XADC readings of section
+1.
 
 Problems that were found **[measured, 2026-11-21]**:
 

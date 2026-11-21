@@ -33,6 +33,8 @@
 # The SoC has these CSRs besides the standard ones:
 #   buttons    bits 0-7: SW1 to SW8 pushed; bit 8: PWR_SW1 pushed
 #   status     bit 0: PORn high (the peripherals are out of reset); bit 1: a card is in the SD socket
+#   xadc       temperature, vccint, vccaux, vccbram: the raw 12-bit values of the XADC, sampled
+#              all the time. litex/linux/litex-xadc-hwmon.c gives them to Linux as hwmon.
 #   seven_seg  bits 0-6: segments A to G of 7SEG1 (right); bit 7: its point; bits 8-15: 7SEG2.
 #              A 1 lights the segment. All are off after reset.
 # The BIOS console is 115200 8N1 on the DB9 (COM1).
@@ -48,6 +50,7 @@ from migen import Cat, ClockDomain, Signal
 from litex.gen import LiteXModule
 from litex.soc.cores.clock import S7IDELAYCTRL, S7MMCM
 from litex.soc.cores.gpio import GPIOIn, GPIOOut
+from litex.soc.cores.xadc import S7SystemMonitor
 from litex.soc.integration.builder import Builder
 from litex.soc.integration.soc_core import SoCCore
 
@@ -141,6 +144,9 @@ class BaseSoC(SoCCore):
 
         if with_sdcard or with_sdcard_write:
             self.add_sdcard(mode="read+write" if with_sdcard_write else "read")
+
+        # LiteDRAM, unlike MIG (section 8), does not use the only XADC of the device.
+        self.xadc = S7SystemMonitor()
 
         segments = Signal(16)
         self.seven_seg = GPIOOut(segments)

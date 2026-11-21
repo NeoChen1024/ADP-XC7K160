@@ -1,0 +1,3 @@
+# Kbuild for litex-xadc-hwmon.ko, an out-of-tree module. Build it in a copy, outside the repository:
+#   make -C /path/to/linux-build M=/path/to/copy ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- modules
+obj-m := litex-xadc-hwmon.o
