@@ -22,6 +22,9 @@ the owner.
 - `workbench/board.py` owns the channel table of the workbench. The build makes
   `workbench_pkg.sv` and `pins.xdc` from it, and `workbench.py` reads the same table.
 - The start of `workbench/rtl/adp_xc7k160_workbench.sv` owns the command protocol.
+- `litex/adp_xc7k160_platform.py` reads its pins from `pins.csv`. Do not write a pin number into it.
+- `litex/versions.txt` is made by `litex/versions.sh`. It names the LiteX commits of the result in
+  README section 15. Make it again when a new result uses a different installation.
 - `workbench/results/` holds the records of measurements, with the date in each file name.
 - `workbench/prebuilt/` holds the bitstreams and the reports of one build.
 - The start of each script owns its usage and options.
@@ -114,6 +117,8 @@ README from here; do not copy pins, figures or limits into this guide.
 - The files in `workbench/probes/` are one-time scripts, kept so that the work can be done again.
   If a probe needs an earlier design, its first lines say so.
 - The Python scripts use the standard library and pyserial. A new dependency needs a reason.
+  The scripts of `litex/` also need LiteX, because they are LiteX designs. LiteX stays outside the
+  repository: README section 15 says how to install it.
 - Run a job that uses much CPU time at the lowest priority (`nice -n 19`). The `build.sh` scripts
   do this themselves.
 - Do not add automated tests unless asked. Validate a change on the board or in the simulation, and

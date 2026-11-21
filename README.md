@@ -35,6 +35,7 @@ text says that it is not known.
 | `example-ddr3-test/` | An example that builds alone: MIG, a 1 GiB memory test and a UART report. It shows the clocks, the UART, MIG and the configuration flash pins |
 | `tools/` | The script that makes `pins.csv` and `package-pins.csv`, and its two inputs (the pin table of the manual, the package data of Vivado). A new board finding goes into `tools/tables.py`; then make the tables again |
 | `workbench/` | A design and a host script that measure the board: the level and frequency of each pin, I2C, MDIO, Ethernet, SD, audio, buttons, displays. See section 14 |
+| `litex/` | A LiteX platform and a LiteX SoC for this board, and the versions of LiteX that built it. See section 15 |
 
 Not in this repository:
 
@@ -926,6 +927,73 @@ python3 workbench/workbench.py sdrw                     # WRITES TO THE SD CARD:
   design (`adb00002`) and do not run on the present bitstream.
 - The start of `rtl/adp_xc7k160_workbench.sv` gives the command protocol. `board.py` is the channel
   table, and also makes the XDC.
+
+## 15. LiteX
+
+`litex/` has a platform and an SoC for [LiteX](https://github.com/enjoy-digital/litex). LiteX is
+not in this repository. Install it into a separate directory with its `litex_setup.py`. With
+`--config=standard`, that script clones 28 Git repositories side by side.
+
+| File | Contents |
+|---|---|
+| `adp_xc7k160_platform.py` | The LiteX platform. It reads the pins and the I/O standards from `pins.csv`, by the signal names of the manual |
+| `adp_xc7k160_target.py` | The SoC: a VexRiscv CPU, the BIOS, the UART, the buttons and the displays. It has no DDR3 yet |
+| `versions.sh` | Lists the URL and the commit of each repository of a LiteX installation |
+| `versions.txt` | The output of `versions.sh` for the installation that built the SoC below |
+
+To install LiteX and build the SoC:
+
+```sh
+mkdir /path/to/litex-hub && cd /path/to/litex-hub
+curl -O https://raw.githubusercontent.com/enjoy-digital/litex/master/litex_setup.py
+uv venv --python 3.13 venv
+venv/bin/python litex_setup.py --init --install --config=standard
+export PATH=/path/to/litex-hub/venv/bin:/path/to/Xilinx/2025.2.1/Vivado/bin:$PATH
+
+cd /some/writable/directory
+nice -n 19 python3 $A/litex/adp_xc7k160_target.py --build    # into ./build/adp_xc7k160
+VIVADO=... XVCD=... python3 $A/litex/adp_xc7k160_target.py --load
+```
+
+- The BIOS makes `python3` run LiteX modules. Thus the `bin` directory of the venv must be first
+  in `PATH`.
+- The BIOS needs a RISC-V compiler. LiteX accepts `riscv64-linux-gnu-gcc` from the Linux
+  distribution.
+- The target refuses an output directory inside this repository. The default is
+  `./build/adp_xc7k160` in the current directory.
+- If timing is not met, the target stops with exit status 3, before the load.
+- `--load` uses `jtag/load.sh`. No option of the platform or the target writes a flash. The SoC
+  holds `FCS_B`, `FOE_B` and `FWE_B` high (section 5).
+
+The SoC has two CSRs besides the standard ones:
+
+| CSR | Bits |
+|---|---|
+| `buttons` | 0 to 7: SW1 to SW8 pushed. 8: `PWR_SW1` pushed. 9: `PORn` high |
+| `seven_seg` | 0 to 6: segments A to G of 7SEG1 (right). 7: its decimal point. 8 to 15: the same for 7SEG2 (left). A 1 lights the segment |
+
+`HW_RST_SW1` resets the MMCM, and thus the SoC. The BIOS console is 115200 8N1 on COM1.
+
+Result **[measured, 2026-11-21]**: the SoC was built at the commits of `litex/versions.txt` (LiteX
+`afed66238`), with Python 3.13 and Vivado 2025.2.1:
+
+- The build was for -1 with a 100 MHz system clock. The setup slack was +1.446 ns and the hold
+  slack was +0.056 ns. The design used 2,172 LUT, 1,775 FF and 15 block RAM tiles.
+- `jtag/load.sh` loaded the bitstream. The host read the BIOS banner on COM1 at 115200 baud. The
+  banner showed VexRiscv at 100 MHz, 128 KiB ROM and 8 KiB SRAM.
+- The BIOS command `mem_read 0xf0000000` read `buttons` as `0x200`: `PORn` was high, and no button
+  was pushed.
+- `mem_write 0xf0001800 0x3850` wrote `seven_seg`, and `mem_read` read the value back. This
+  value shows `Lr`. A person did not look at the displays.
+
+Problems that were found **[measured, 2026-11-21]**:
+
+- The BIOS command `ident` shows `-`. The banner shows the identifier correctly. At this LiteX
+  commit the BIOS reads the macro `CSR_IDENTIFIER_MEM_BASE_VA`, and LiteX does not generate it.
+  This is a problem of LiteX, and not of the board.
+- After the BIOS command `reboot`, the host read the banner as wrong characters. The text after a
+  pause was correct. A probable cause: the reset stopped a character in the middle, and the UART
+  of the host then took a data bit as a start bit. A JTAG load gives a correct banner.
 
 ## License
 
