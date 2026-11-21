@@ -8,7 +8,7 @@
  * The CSR offsets follow the order of the CSRs in adp_ac97.py. litex/linux/mkdts.py checks them
  * against csr.json when it makes the node.
  *
- * README section 15 of the ADP-XC7K160 board notes says how to build it.
+ * litex/linux/README.md of the ADP-XC7K160 board notes says how to build it.
  */
 
 #include <linux/delay.h>

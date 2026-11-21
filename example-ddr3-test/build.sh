@@ -5,7 +5,7 @@
 #
 # Everything is written under WORK, ./adp-ddr3-test in the current directory by default: MIG in
 # WORK/mig-<rate>, generated once for each rate, and the reports and ddr3-test.bit in WORK/build.
-# The part is built as speed grade -2 unless GRADE says otherwise: ../README.md says why.
+# The part is built as speed grade -2 unless GRADE says otherwise: ../docs/fpga.md says why.
 set -eu
 here="$(cd "$(dirname "$0")" && pwd)"
 renice -n 19 -p $$ >/dev/null 2>&1 || true

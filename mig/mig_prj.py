@@ -4,7 +4,7 @@ memory, on the pins the board's manual lists (UM098 section 2.11, ../pins.csv).
 
     mig_prj.py pins.csv [rate] >mig.prj
 
-The rate is DDR3-800, 1066, 1300, 1600 or 1800, 1600 if none is given; ../README.md says which of them
+The rate is DDR3-800, 1066, 1300, 1600 or 1800, 1600 if none is given; ../docs/ddr3.md says which of them
 ran on the board, and how. prj/ has what this writes for each, and generate.sh runs MIG on it.
 MIG's own limits are for the part, the package and the speed grade it is told: an FBG676 at -2 is allowed
 1066 at most. The faster rates name the FFG676, which has the same pins, and for 1600 and 1800 the 2.0 V

@@ -3,29 +3,31 @@
 #
 # The pins and the I/O standards come from ../pins.csv at import time, by the signal names of the
 # manual (the manual_signal column). Thus this file has no copy of a pin number, and a finding that
-# goes into pins.csv reaches the platform. The README of the repository gives the evidence for
-# each resource; the section numbers below refer to it.
+# goes into pins.csv reaches the platform. The files of ../docs give the evidence for each
+# resource; the names below refer to them.
 #
 # Resources that are here:
-#   clk20         OSCCLK1, 20 MHz (section 4)
-#   clk200        SYSCLK, 200 MHz, differential (section 4)
-#   sys_rst_n     SYS_RSTn, low while HW_RST_SW1 is pushed (section 9)
-#   por_n         PORn, the reset of the peripherals on the board (section 9)
-#   pwr_btn_n     GPIO0_ENn, low while PWR_SW1 is pushed (section 9)
-#   serial        S1 to the DB9 connector (section 7)
-#   serial_ctrl   the RTS and CTS of S1 (section 7)
-#   user_btn 0-7  SW1 to SW8, with PULLUP, low while pushed (section 9)
-#   seven_seg 0-1 7SEG1 (right) and 7SEG2 (left), low lights a segment (section 9)
-#   bpi_ctrl      FCS_B, FOE_B, FWE_B of U4 (section 5). A design must drive all three high
-#   ddram         the 32-bit DDR3, two x16 devices, 1 GiB (section 8)
-#   eth_clocks    MAC_TX_CLK, MAC_RX_CLK of the 10/100 PHY, 25 MHz at 100 Mbit/s (section 11)
+#   clk20         OSCCLK1, 20 MHz (docs/clocks.md)
+#   clk200        SYSCLK, 200 MHz, differential (docs/clocks.md)
+#   sys_rst_n     SYS_RSTn, low while HW_RST_SW1 is pushed (docs/buttons-displays-resets.md)
+#   por_n         PORn, the reset of the peripherals on the board (docs/buttons-displays-resets.md)
+#   pwr_btn_n     GPIO0_ENn, low while PWR_SW1 is pushed (docs/buttons-displays-resets.md)
+#   serial        S1 to the DB9 connector (docs/uart.md)
+#   serial_ctrl   the RTS and CTS of S1 (docs/uart.md)
+#   user_btn 0-7  SW1 to SW8, with PULLUP, low while pushed (docs/buttons-displays-resets.md)
+#   seven_seg 0-1 7SEG1 (right) and 7SEG2 (left), low lights a segment
+#                 (docs/buttons-displays-resets.md)
+#   bpi_ctrl      FCS_B, FOE_B, FWE_B of U4 (docs/configuration.md). A design must drive all
+#                 three high
+#   ddram         the 32-bit DDR3, two x16 devices, 1 GiB (docs/ddr3.md)
+#   eth_clocks    MAC_TX_CLK, MAC_RX_CLK of the 10/100 PHY, 25 MHz at 100 Mbit/s (docs/ethernet.md)
 #   eth           the MII of the PHY, without its straps COL, CRS and RX_ER (see _eth below)
-#   eth_pwrdwn    PHY_PWRDWN; low is normal operation (section 11)
-#   sdcard        SD_CLK, SD_CMD, SD_DAT0 to SD_DAT3 (section 11)
+#   eth_pwrdwn    PHY_PWRDWN; low is normal operation (docs/ethernet.md)
+#   sdcard        SD_CLK, SD_CMD, SD_DAT0 to SD_DAT3 (docs/sd-card.md)
 #   sd_cd_n       SD_CDn, low with a card in the socket
 #   sd_pwr_on     SD_PWR_ON, the enable of the socket power; 1 is on
-#   ac97          the AC-link of the ALC203 codec (section 11). BIT_CLK comes from the codec, on a
-#                 pin that is not clock capable (K26)
+#   ac97          the AC-link of the ALC203 codec (docs/audio.md). BIT_CLK comes from the codec,
+#                 on a pin that is not clock capable (K26)
 
 import csv
 import os
@@ -45,7 +47,8 @@ def _io(*signals, iostandard=None):
 
     The I/O standard comes from pins.csv. It must be the same for all the signals. Bank 16 has a
     voltage that SW11 selects, so its pins have no single standard in pins.csv: the caller gives one.
-    The DDR3 pins have the standards that MIG gave them, which ran on the board (section 8).
+    The DDR3 pins have the standards that MIG gave them, which ran on the board
+    (docs/ddr3.md).
     """
     rows = [_TABLE[s] for s in signals]
     standards = {iostandard or r["iostandard"] for r in rows}
@@ -78,15 +81,15 @@ def _ddram():
         Subsignal("cke",     *_io("DDR3_CKE0")),
         Subsignal("odt",     *_io("DDR3_ODT0")),
         Subsignal("reset_n", *_io("DDR3_RST_B")),
-        # No VCCAUX_IO=HIGH: the FBG676 package has no 2.0 V VccAuxIO (section 8).
+        # No VCCAUX_IO=HIGH: the FBG676 package has no 2.0 V VccAuxIO (docs/ddr3.md).
         Misc("SLEW=FAST"),
     )
 
 
 def _eth():
     # The PHY reads RXD0-3, CRS, COL, RX_DV, RX_ER and TX_CLK as straps when PORn releases it, after
-    # the design is in operation. A pull-up on them isolates the PHY (section 11): never add PULLUP
-    # here. The MII PHY of LiteEth does not use COL, CRS and RX_ER, so they are left out, and
+    # the design is in operation. A pull-up on them isolates the PHY (docs/ethernet.md): never add
+    # PULLUP here. The MII PHY of LiteEth does not use COL, CRS and RX_ER, so they are left out, and
     # Vivado puts its weak pull-down on them, which gives address 0 and MII.
     return [
         ("eth_clocks", 0,
@@ -126,7 +129,7 @@ _io_list = [
     ),
 
     # The board has no pull-up on the buttons. Bank 16 (SW5 to SW8) is read as LVCMOS18: the input
-    # then reads correctly at each voltage that SW11 can select (section 3).
+    # then reads correctly at each voltage that SW11 can select (docs/power.md).
     *[("user_btn", i - 1, *_io(f"GPIO{i}"), Misc("PULLUP TRUE")) for i in range(1, 5)],
     *[("user_btn", i - 1, *_io(f"GPIO{i}", iostandard="LVCMOS18"), Misc("PULLUP TRUE")) for i in range(5, 9)],
 
@@ -150,7 +153,7 @@ _io_list = [
     ),
     ("sd_cd_n",   0, *_io("SD_CDn")),
 
-    # SYNC and SDATA_OUT must be low while AC97_RSTn rises (section 11).
+    # SYNC and SDATA_OUT must be low while AC97_RSTn rises (docs/audio.md).
     ("ac97", 0,
         Subsignal("bit_clk",   *_io("AC97_BCLK/I2S_SCLK")),
         Subsignal("sdata_in",  *_io("AC97_SDI/I2S_RXD")),
@@ -169,7 +172,7 @@ class JTAGLoader(GenericProgrammer):
         self.call(["sh", os.path.join(_REPOSITORY, "jtag", "load.sh"), bitstream_file])
 
     def flash(self, address, data_file):
-        raise RuntimeError("this platform does not write a flash: see section 5 of the README")
+        raise RuntimeError("this platform does not write a flash: see docs/configuration.md")
 
 
 class Platform(Xilinx7SeriesPlatform):
@@ -177,13 +180,13 @@ class Platform(Xilinx7SeriesPlatform):
     default_clk_period = 1e9/200e6
 
     def __init__(self, speedgrade=-2, toolchain="vivado"):
-        # The chip is marked -1. The LiteX designs are built as -2: section 2 gives the evidence.
+        # The chip is marked -1. The LiteX designs are built as -2: docs/fpga.md gives the evidence.
         Xilinx7SeriesPlatform.__init__(self, f"xc7k160tfbg676{speedgrade}", _io_list,
             name="adp_xc7k160", toolchain=toolchain)
         self.speedgrade = speedgrade
         self.add_platform_command("set_property CFGBVS VCCO [current_design]")
         self.add_platform_command("set_property CONFIG_VOLTAGE 3.3 [current_design]")
-        # The XVC cable is slow: a compressed bitstream loads in less time (section 5).
+        # The XVC cable is slow: a compressed bitstream loads in less time (docs/configuration.md).
         self.toolchain.bitstream_commands = ["set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]"]
 
     def create_programmer(self):
@@ -194,5 +197,5 @@ class Platform(Xilinx7SeriesPlatform):
         self.add_period_constraint(self.lookup_request("clk20", loose=True), 1e9/20e6)
         self.add_period_constraint(self.lookup_request("clk200", loose=True), 1e9/200e6)
         if self.lookup_request("ddram", loose=True) is not None:
-            # Only bank 33 has the DCI reference resistors (section 8).
+            # Only bank 33 has the DCI reference resistors (docs/ddr3.md).
             self.add_platform_command("set_property DCI_CASCADE {{32}} [get_iobanks 33]")

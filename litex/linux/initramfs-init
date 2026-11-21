@@ -1,7 +1,7 @@
 #!/bin/busybox sh
 # Initramfs for the first boot of the ADP-XC7K160: a shell on the console and the network, to write
-# the SD card (README section 15). The kernel sets the address of eth0 from ip= in the bootargs of
-# the DTS. If the bootargs have no ip=, adpip=ADDRESS/PREFIX gives one here.
+# the SD card (litex/linux/README.md). The kernel sets the address of eth0 from ip= in the bootargs
+# of the DTS. If the bootargs have no ip=, adpip=ADDRESS/PREFIX gives one here.
 /bin/busybox --install -s /bin
 mkdir -p /proc /sys /dev /tmp /mnt
 mount -t proc proc /proc

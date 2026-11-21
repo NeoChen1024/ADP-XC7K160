@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# A TFTP server that only reads, for the netboot of the LiteX BIOS (README section 15).
+# A TFTP server that only reads, for the netboot of the LiteX BIOS (litex/linux/README.md).
 #
 #   python3 tftpd.py DIRECTORY [--bind ADDRESS] [--port 6069]
 #

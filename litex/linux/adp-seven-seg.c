@@ -11,7 +11,7 @@
  * device. A child node with reg 0 (left) or 1 (right) can give "label" and
  * "linux,default-trigger".
  *
- * README section 15 of the ADP-XC7K160 board notes says how to build it.
+ * litex/linux/README.md of the ADP-XC7K160 board notes says how to build it.
  */
 
 #include <linux/err.h>

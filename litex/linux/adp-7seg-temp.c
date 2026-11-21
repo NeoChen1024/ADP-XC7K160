@@ -6,7 +6,7 @@
  *
  *   adp-7seg-temp [interval in seconds, 2 by default]
  *
- * Build it static, outside the repository (README section 15):
+ * Build it static, outside the repository (litex/linux/README.md):
  *   riscv64-linux-gnu-gcc -O2 -static -o adp-7seg-temp adp-7seg-temp.c
  */
 

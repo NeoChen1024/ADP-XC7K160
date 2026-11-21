@@ -1,7 +1,7 @@
 #!/bin/sh
-# Makes the Debian 13 root file system for the NaxRiscv SoC (README section 15). It runs as root in
-# an amd64 debian:trixie container. The host must run riscv64 binaries through qemu-user binfmt with
-# the F flag.
+# Makes the Debian 13 root file system for the NaxRiscv SoC (litex/linux/README.md). It runs as root
+# in an amd64 debian:trixie container. The host must run riscv64 binaries through qemu-user binfmt
+# with the F flag.
 #
 #   docker run --rm --privileged -v /path/to/work:/work \
 #       -v /path/to/modules-install:/work/modules:ro \

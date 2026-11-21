@@ -6,7 +6,7 @@
 #
 # The DDR3 is main RAM (LiteDRAM, K7DDRPHY at 1:4), so its data rate is 8 times the system clock:
 # DDR3-1400 at the default 175 MHz, DDR3-800 at 100 MHz. The 4x clock goes through a BUFG, so
-# 710 MHz (-2) limits the rate to DDR3-1420 (README section 15).
+# 710 MHz (-2) limits the rate to DDR3-1420 (litex/README.md).
 #
 # With --integrated-main-ram-size the SoC has no DDR3 controller. With --with-bist the SoC also has
 # the LiteDRAM BIST on the native port (BIOS: sdram_bist, sdram_hw_test).
@@ -28,7 +28,7 @@
 # writes the card. --with-sdcard-write also adds the write path. Use it only with a card that the
 # owner gave for writing (AGENTS.md).
 #
-# Run it with the Python of a LiteX installation (README section 15). The build writes to
+# Run it with the Python of a LiteX installation (litex/README.md). The build writes to
 # DIR, ./build/adp_xc7k160 in the current directory by default. It refuses a directory inside this
 # repository. --load uses ../jtag/load.sh, so set VIVADO and XVCD (or XVC) as for that script. If
 # timing is not met, the script stops before the load with exit status 3. No option writes a flash.
@@ -71,8 +71,9 @@ class _CRG(LiteXModule):
         self.rst    = Signal()
         self.cd_sys = ClockDomain()
 
-        # HW_RST_SW1 resets the SoC. It does not reconfigure the FPGA (section 9).
-        # SYSCLK is the clock that the board gives to the DDR3 (section 4).
+        # HW_RST_SW1 resets the SoC. It does not reconfigure the FPGA
+        # (docs/buttons-displays-resets.md).
+        # SYSCLK is the clock that the board gives to the DDR3 (docs/clocks.md).
         self.mmcm = mmcm = S7MMCM(speedgrade=platform.speedgrade)
         self.comb += mmcm.reset.eq(~platform.request("sys_rst_n") | self.rst)
         mmcm.register_clkin(platform.request("clk200"), 200e6)
@@ -100,7 +101,7 @@ class BaseSoC(SoCCore):
 
         if with_dram:
             # Two PMF512816BBR (4 Gbit, x16). MT41J256M16 has the same geometry; MIG uses the same
-            # substitute (section 8).
+            # substitute (docs/ddr3.md).
             self.ddrphy = s7ddrphy.K7DDRPHY(platform.request("ddram"),
                 memtype      = "DDR3",
                 nphases      = 4,
@@ -112,7 +113,7 @@ class BaseSoC(SoCCore):
                 with_bist     = with_bist,
             )
 
-        # U4 holds the factory design. With all three control lines high it does nothing (section 5).
+        # With all three control lines high, U4 does nothing (docs/configuration.md).
         bpi = platform.request("bpi_ctrl")
         self.comb += [bpi.cs_n.eq(1), bpi.oe_n.eq(1), bpi.we_n.eq(1)]
 
@@ -127,11 +128,13 @@ class BaseSoC(SoCCore):
         self.comb += status.eq(Cat(platform.request("por_n"), ~platform.request("sd_cd_n")))
         self.status = GPIOIn(status)
 
-        # The two known states: the PHY runs, and the socket has power (section 11).
+        # The two known states: the PHY runs, and the socket has power (docs/ethernet.md,
+        # docs/sd-card.md).
         self.comb += [platform.request("eth_pwrdwn").eq(0), platform.request("sd_pwr_on").eq(1)]
 
         if with_etherbone or with_ethernet:
-            # PORn holds the PHY in reset for about 385 ms after the load (section 9). The core
+            # PORn holds the PHY in reset for about 385 ms after the load
+            # (docs/buttons-displays-resets.md). The core
             # needs nothing from the PHY before that.
             self.ethphy = LiteEthPHYMII(
                 clock_pads = platform.request("eth_clocks"),
@@ -143,7 +146,7 @@ class BaseSoC(SoCCore):
                 buffer_depth=255)
         if with_ethernet:
             # More slots than the default of 2 give Linux at 100 MHz more time to empty them
-            # (README section 15, "Ethernet in Linux").
+            # (litex/linux/README.md, "Ethernet").
             self.add_ethernet(phy=self.ethphy, local_ip=eth_ip, remote_ip=remote_ip,
                 mac_address=0x02adb0000001, nrxslots=8, ntxslots=4)
             self.add_constant("TFTP_SERVER_PORT", tftp_port)
@@ -172,7 +175,7 @@ class BaseSoC(SoCCore):
             # K26 is not clock capable: the clock goes from the IBUF to the BUFG on general routing.
             platform.add_platform_command("set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets ac97_bit_clk_IBUF]")
 
-        # LiteDRAM, unlike MIG (section 8), does not use the only XADC of the device.
+        # LiteDRAM, unlike MIG (docs/ddr3.md), does not use the only XADC of the device.
         self.xadc = S7SystemMonitor()
 
         segments = Signal(16)
@@ -200,7 +203,7 @@ def main():
     from litex.build.parser import LiteXArgumentParser
     parser = LiteXArgumentParser(platform=adp_xc7k160_platform.Platform, description="LiteX SoC on ADP-XC7K160.")
     parser.add_target_argument("--sys-clk-freq", default=175e6, type=float, help="System clock frequency.")
-    parser.add_target_argument("--speedgrade",   default=-2, type=int, choices=[-1, -2], help="Speed grade for Vivado (README section 2).")
+    parser.add_target_argument("--speedgrade",   default=-2, type=int, choices=[-1, -2], help="Speed grade for Vivado (docs/fpga.md).")
     parser.add_target_argument("--with-bist",    action="store_true", help="Add the LiteDRAM BIST.")
     parser.add_target_argument("--with-etherbone", action="store_true", help="Add Etherbone on the 10/100 Ethernet.")
     parser.add_target_argument("--eth-ip",       default=None, help="IP address of Etherbone; required with --with-etherbone.")

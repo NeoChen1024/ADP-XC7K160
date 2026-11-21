@@ -9,8 +9,12 @@ the owner.
 
 ## Sources of truth
 
-- [README.md](README.md) owns the description of the board, in numbered sections. Section 13
-  lists what is not known. Section 14 describes the workbench.
+- [README.md](README.md) gives the overview: the evidence marks, a summary of each part of the
+  board with a link, the file list and the quick start.
+- `docs/` owns the description of the board, one file for each part. `docs/unknowns.md` lists
+  what is not known.
+- `workbench/README.md` describes the workbench. `litex/README.md` describes the LiteX SoC, and
+  `litex/linux/README.md` describes Linux and Debian on it.
 - `pins.csv` and `package-pins.csv` are generated. `tools/tables.py` makes them from
   `tools/manual-pins.csv` and `tools/package-dump.csv`. Do not edit the two tables by hand. A
   finding about a pin goes into the `board` set and the `notes` of `tools/tables.py`; then make the
@@ -24,27 +28,37 @@ the owner.
 - The start of `workbench/rtl/adp_xc7k160_workbench.sv` owns the command protocol.
 - `litex/adp_xc7k160_platform.py` reads its pins from `pins.csv`. Do not write a pin number into it.
 - `litex/versions.txt` is made by `litex/versions.sh`. It names the LiteX commits of the result in
-  README section 15. Make it again when a new result uses a different installation.
+  `litex/README.md`. Make it again when a new result uses a different installation.
 - `workbench/results/` holds the records of measurements, with the date in each file name.
 - `workbench/prebuilt/` holds the bitstreams and the reports of one build.
 - The start of each script owns its usage and options.
 
-Keep this guide about workflow. If a fact about the board changes, change the README. Link to the
-README from here; do not copy pins, figures or limits into this guide.
+Keep this guide about workflow. If a fact about the board changes, change the file of `docs/`
+that owns it, and the summary in the README if it changes. Link to the documents from here; do not
+copy pins, figures or limits into this guide.
 
 ## Evidence marks
 
 - Each statement about the board has a source: `[measured]`, `[package]` or `[manual]`. The README
   defines them. If there is no source, the text says that the fact is not known.
 - Write `[measured]` only for something that ran on this board or that an instrument showed. A
-  statement that seems reasonable stays `[manual]`, or goes into section 13.
+  statement that seems reasonable stays `[manual]`, or goes into `docs/unknowns.md`.
 - A person can also be the source: a marking that was read, a switch position that was seen. Say
   so ("seen", "the marking").
 - If a measurement contradicts the manual or an earlier statement, keep a short note of what was
   wrong. Do not delete it silently.
-- A change that answers or raises a question updates section 13 in the same edit.
-- The section numbers are cross-referenced in the README, in script comments and in `pins.csv`.
-  After you add, remove or move a section, check each reference to it.
+- A change that answers or raises a question updates `docs/unknowns.md` in the same edit.
+- The documents, the script comments and `pins.csv` refer to the documents by their file names.
+  After you rename, remove or split a document, check each reference to it.
+
+## Documents
+
+- A document describes the present state: what the board is, what the designs do, and the results
+  that support them. It is not a log of the work.
+- Remove the steps of past work, the old states and the old figures when they no longer apply. Git
+  keeps them. Keep a short note only where an earlier statement was wrong (see above).
+- A table of builds or measurements keeps the present build, and the other rows only if a statement
+  of the document uses them.
 
 ## Numbers and claims
 
@@ -70,7 +84,7 @@ README from here; do not copy pins, figures or limits into this guide.
 - The I2C EEPROM is only read.
 - The workbench reads a pin with an unknown connection and never drives it. It drives only the
   lines that the board gives to the FPGA to drive. It does not drive the pins of bank 16.
-- Do not put `PULLUP` on the pins of the Ethernet PHY (README section 11).
+- Do not put `PULLUP` on the pins of the Ethernet PHY (`docs/ethernet.md`).
 - `workbench.py net` and `workbench.py sdrw` are the only commands with an effect outside the
   board. They are not part of `auto`. Run them only when the owner permits it in that session.
   `net` sends only to the host that runs it, and to the ARP broadcast address.
@@ -81,7 +95,7 @@ README from here; do not copy pins, figures or limits into this guide.
   that is now in the socket for the Debian work: it can be written, and its old contents need no
   copy. Any other card needs the owner's permission.
 - A new command that sends to a network or writes to a medium follows the same pattern: it is
-  explicit, it is not part of `auto`, and the README gives its limits.
+  explicit, it is not part of `auto`, and its document gives its limits.
 - A test that overwrites data first stores the original data in a file. It deletes the file only
   after it has restored and verified the data. A step that injects a fault goes last.
 - Connect or disconnect the JTAG cable only while the board has no power.
@@ -118,14 +132,14 @@ README from here; do not copy pins, figures or limits into this guide.
 - A change to the command protocol changes `MAGIC` in `workbench/board.py`. Change the protocol
   text in the RTL, the testbench and `workbench.py` in the same edit.
 - Replace the files of `workbench/prebuilt/` together: both bitstreams and all reports come from
-  one build. Then update the figures in README section 14.
+  one build. Then update the figures in `workbench/README.md`.
 - Do not change an old file in `workbench/results/`. A new measurement is a new file with its
-  date. If a new result replaces an old one, the README refers to the new file.
+  date. If a new result replaces an old one, the documents refer to the new file.
 - The files in `workbench/probes/` are one-time scripts, kept so that the work can be done again.
   If a probe needs an earlier design, its first lines say so.
 - The Python scripts use the standard library and pyserial. A new dependency needs a reason.
   The scripts of `litex/` also need LiteX, because they are LiteX designs. LiteX stays outside the
-  repository: README section 15 says how to install it.
+  repository: `litex/README.md` says how to install it.
 - Run a job that uses much CPU time at the lowest priority (`nice -n 19`). The `build.sh` scripts
   do this themselves.
 - Do not add automated tests unless asked. Validate a change on the board or in the simulation, and

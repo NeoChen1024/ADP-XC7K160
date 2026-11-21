@@ -1,5 +1,5 @@
 #!/bin/sh
-# Makes an SD card image for the NaxRiscv SoC (README section 15):
+# Makes an SD card image for the NaxRiscv SoC (litex/linux/README.md):
 #   partition 1  FAT32, 256 MiB, label BOOT: boot.json, opensbi.bin, Image, linux.dtb
 #   partition 2  ext4, the rootfs.ext4 of mkrootfs.sh (2 GiB); grow it on the board with growpart
 #

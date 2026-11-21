@@ -24,7 +24,7 @@ set_property PROGRAM.FILES [list $mcs] $cfgmem
 set_property PROGRAM.PRM_FILE $prm $cfgmem
 set_property PROGRAM.BPI_RS_PINS {none} $cfgmem
 # The pins that the programming design does not use get the same weak pull-down as an unused pin of
-# a normal design. A pull-up on the MII pins would isolate the Ethernet PHY (README section 11).
+# a normal design. A pull-up on the MII pins would isolate the Ethernet PHY (docs/ethernet.md).
 set_property PROGRAM.UNUSED_PIN_TERMINATION {pull-down} $cfgmem
 set_property PROGRAM.BLANK_CHECK 0 $cfgmem
 set_property PROGRAM.ERASE 1 $cfgmem

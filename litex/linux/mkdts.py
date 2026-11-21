@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# Makes the DTS of the NaxRiscv SoC for a boot from the SD card (README section 15).
+# Makes the DTS of the NaxRiscv SoC for a boot from the SD card (litex/linux/README.md).
 #
 #   python3 mkdts.py csr.json > linux.dts && dtc -O dtb -o linux.dtb linux.dts
 #

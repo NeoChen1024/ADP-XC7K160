@@ -896,8 +896,8 @@ module adp_xc7k160_workbench
     end
 
     // ---- the digits ----
-    // A segment is lit by a low. Left alone they read "L" on the digit the README calls the left one,
-    // 7SEG2, and "r" on the other: A is bit 0, G bit 6, the point bit 7.
+    // A segment is lit by a low. Left alone they read "L" on the left digit, 7SEG2
+    // (docs/buttons-displays-resets.md), and "r" on the other: A is bit 0, G bit 6, the point bit 7.
     assign digit_high_n = ~(digits_given ? digits[15:8] : 8'b0011_1000);
     assign digit_low_n  = ~(digits_given ? digits[7:0]  : 8'b0101_0000);
 endmodule

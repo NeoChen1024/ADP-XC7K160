@@ -3,11 +3,12 @@
 #
 #   [VIVADO=/path/to/vivado] [XVC=host:port | XVCD=/path/to/xvcd-pico] sh flash_u4.sh design.bit
 #
-# Run it only when the owner explicitly asks for this write (AGENTS.md). README section 5 says what
-# U4 holds, and how a backup is read and restored.
+# Run it only when the owner explicitly asks for this write (AGENTS.md). docs/configuration.md says
+# what U4 holds, and how a backup is read and restored.
 #
 # The script makes an MCS file of the bitstream at address 0 (BPI x16, 128 MiB part), and refuses a
-# file that goes above 0x4000000: the upper half of U4 is out of reach (FA25, README section 5).
+# file that goes above 0x4000000: the upper half of U4 is out of reach (FA25,
+# docs/configuration.md).
 # Vivado then erases only the blocks of the file, writes them, verifies them, and reconfigures the
 # FPGA from U4. The MCS file and the logs (flash_u4.log, flash_u4.out, xvcd.log) go beside the
 # bitstream. The cable is the same as for load.sh.

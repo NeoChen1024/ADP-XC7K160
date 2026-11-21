@@ -1,6 +1,6 @@
 #!/bin/sh
-# Login message of the ADP-XC7K160 with the LiteX NaxRiscv SoC (README section 15). pam_motd runs
-# it at each login. The board facts are fixed text. The SoC parts are read from sysfs, so a build
+# Login message of the ADP-XC7K160 with the LiteX NaxRiscv SoC (litex/linux/README.md). pam_motd
+# runs it at each login. The board facts are fixed text. The SoC parts are read from sysfs, so a build
 # without a part does not show it. Only one external program (od) runs, to keep the login fast on
 # the 100 MHz CPU.
 

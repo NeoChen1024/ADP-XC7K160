@@ -1,5 +1,5 @@
 #
-# AC97 controller for the ALC203 codec of the ADP-XC7K160 (README sections 11 and 15).
+# AC97 controller for the ALC203 codec of the ADP-XC7K160 (docs/audio.md, litex/README.md).
 #
 # The codec drives BIT_CLK (12.288 MHz). The controller sends SYNC and SDATA_OUT on the rising
 # edge, and samples SDATA_IN on the falling edge. A frame has 256 bits: slot 0 (the tag, 16 bits)
