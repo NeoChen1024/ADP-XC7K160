@@ -30,6 +30,7 @@ text says that it is not known.
 | `mig/prj/mig-ddr3-*.prj` | The output of that script, one file for each rate. MIG can read them directly |
 | `mig/mig.tcl`, `mig/generate.sh` | Generate MIG with Vivado, for a non-project flow |
 | `jtag/load.sh`, `jtag/load.tcl` | Load a bitstream into the FPGA through XVC. They do not touch a flash |
+| `jtag/flash_u4.sh`, `jtag/flash_u4.tcl` | Write a bitstream into the configuration flash U4 through XVC. Only when the owner asks (section 5) |
 | `jtag/xvc_scan.py` | Reads the IDCODE, the configuration status, and the XADC temperature and voltages through XVC. It only reads |
 | `flash-probes/` | Two designs that read the flash devices U4 and U17 through JTAG, and their host scripts. They only read. See sections 5 and 10 |
 | `example-ddr3-test/` | An example that builds alone: MIG, a 1 GiB memory test and a UART report. It shows the clocks, the UART, MIG and the configuration flash pins |
@@ -214,7 +215,8 @@ Important points:
 ## 5. Configuration and the configuration flash (U4)
 
 - Configuration mode: **Master BPI x16**. The mode pins read `010` **[measured]**. At power-on the
-  FPGA loads the factory bitstream of Andes from U4. A design that JTAG loads stays until power-off.
+  FPGA loads the bitstream in U4. Since 2026-11-21 that is the LiteX SoC of section 15; before, it
+  was the factory bitstream of Andes. A design that JTAG loads stays until power-off.
 - The XDC must have these two lines **[measured, all the designs have them]**:
 
   ```tcl
@@ -228,7 +230,8 @@ Important points:
   the board).
 
 **U4** is a 128 MB parallel NOR flash, x16. The Vivado configuration memory part is
-`28f00am29ew-bbp-x16` **[manual]**. Pins: `FCS_B` C23, `FOE_B` M17, `FWE_B` L18, `FA[0..24]`,
+`28f00am29ew-bpi-x16` **[measured]**: Vivado 2025.2.1 lists it, and it wrote U4 with it. An earlier
+version of this text gave `28f00am29ew-bbp-x16`, which was wrong. Pins: `FCS_B` C23, `FOE_B` M17, `FWE_B` L18, `FA[0..24]`,
 `FDQ[0..15]` (see `pins.csv`).
 
 - **A design that does not use the flash drives `FCS_B`, `FOE_B` and `FWE_B` high and leaves the
@@ -263,6 +266,15 @@ The contents of U4 (factory state; read completely on 2026-11-20, two reads agre
 The DVD that came with the board (AndeSight and the BSP) does not contain these images. The backup
 of the owner is the only copy.
 
+The write of 2026-11-21 **[measured]** changed the start of this table:
+
+- `jtag/flash_u4.sh` wrote the LiteX SoC of section 15 (two NaxRiscv cores, 512 KiB L2). Its
+  compressed bitstream has 4,134,256 bytes, at `0x0000000–0x03F14E3`.
+- Vivado erased only the blocks of the file: `0x0000000–0x03FFFFF`, 32 blocks of 128 KiB.
+- The end of the factory bitstream, `0x0400000–0x0680000`, is still in U4. Alone it is not a
+  bitstream.
+- The write did not address the upper half. That half was not read again after the write.
+
 To read U4 through JTAG, use `flash-probes/`:
 
 ```sh
@@ -274,8 +286,29 @@ The probe design (`flash-probes/u4/bpijtag.v`) cannot write the flash. It holds 
 its data pins are inputs only. It drives all 26 address bits, with FA25, so it reads both halves.
 One read has no check. Read two times with two different scan lengths, and compare the files.
 
-**Rule: nothing has written U4, and nothing in this repository writes it.** A write changes what the
-board does at power-on, and only that backup can restore it.
+**Rule: write U4 only when the owner explicitly asks for that write.** A write changes what the board
+does at power-on, and only that backup can restore the factory design. `jtag/flash_u4.sh` is the only
+tool here that writes U4:
+
+```sh
+VIVADO=... XVCD=... sh jtag/flash_u4.sh --owner-asked design.bit
+```
+
+- Without `--owner-asked`, the script stops.
+- It makes an MCS file of the bitstream at address 0. It refuses a file that ends above `0x4000000`,
+  because FA25 keeps the upper half out of reach.
+- Vivado loads its BPI programming design through JTAG. Then it erases the blocks of the file,
+  writes them and verifies them. At the end, PROGRAM_B makes the FPGA load the new contents of U4.
+- If the write fails, the FPGA does not configure at power-on. JTAG still works, so `load.sh` and a
+  new write still work.
+
+Result **[measured, 2026-11-21]**: the erase, the write and the verify passed. Through xvc-pico the
+complete run took 109 seconds. After PROGRAM_B, DONE was 1. The SoC then booted Debian from the SD
+card with 2 CPUs and the 512 KiB L2.
+
+To restore the factory design, convert the first `0x680000` bytes of the backup to the byte order of
+a `.bit` file (see above). Then write them at address 0, for example with `write_cfgmem -loaddata`.
+This was not tried.
 
 ## 6. JTAG
 
@@ -834,6 +867,7 @@ Other items:
   238 kHz and 21.875 MHz, and not at 50 MHz (high speed).
 - The margin above the -1 marking (400 MHz, DDR3-1600): there is a result for one chip at room
   temperature only.
+- A boot from U4 after a power cycle (section 5): only PROGRAM_B was tried after the write.
 - Debian on NaxRiscv (section 15): it ran for less than one hour, at room temperature. The write
   speed of the SD card under Linux was not measured alone.
 - LiteX at DDR3-1400 (section 15): the read window is about 5 IDELAY taps. The memory had one test

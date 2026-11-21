@@ -60,8 +60,9 @@ README from here; do not copy pins, figures or limits into this guide.
 
 ## Board safety
 
-- Never write the configuration flash U4. No tool in this repository can write it, and a new tool
-  must not be able to. A design that does not use U4 holds `FCS_B`, `FOE_B` and `FWE_B` high.
+- Write the configuration flash U4 only when the owner explicitly asks for that write. Only then
+  run `jtag/flash_u4.sh` with `--owner-asked`. No other tool in this repository writes U4. A design
+  that does not use U4 holds `FCS_B`, `FOE_B` and `FWE_B` high.
 - The U17 probe (`flash-probes/u17`) passes each command to the flash. Its `dump.py` sends only
   read commands. Keep it so.
 - Write the user flash U17 only when the owner asks, each time. A JTAG load of the FPGA does not
