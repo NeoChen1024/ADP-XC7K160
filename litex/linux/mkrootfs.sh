@@ -28,7 +28,7 @@ mmdebstrap --arch=riscv64 --mode=root --variant=minbase \
   --customize-hook='printf "[Match]\nName=eth0\n\n[Network]\nDHCP=yes\n" > "$1/etc/systemd/network/20-eth0.network"' \
   --customize-hook='chroot "$1" systemctl enable systemd-networkd systemd-resolved' \
   --customize-hook='mkdir -p "$1/boot/firmware" && printf "/dev/mmcblk0p2 / ext4 defaults,noatime 0 1\n/dev/mmcblk0p1 /boot/firmware vfat defaults 0 2\n" > "$1/etc/fstab"' \
-  --customize-hook='cp -a /work/modules/lib/modules "$1/lib/"' \
+  --customize-hook='cp -r /work/modules/lib/modules "$1/lib/" && chown -R 0:0 "$1/lib/modules" && find "$1/lib/modules" -type d -exec chmod 755 {} + && find "$1/lib/modules" -type f -exec chmod 644 {} +' \
   --customize-hook='printf "deb http://deb.debian.org/debian trixie main\ndeb http://deb.debian.org/debian trixie-updates main\ndeb http://security.debian.org/debian-security trixie-security main\n" > "$1/etc/apt/sources.list"' \
   trixie rootfs http://deb.debian.org/debian
 du -sh rootfs

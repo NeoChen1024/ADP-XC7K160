@@ -988,7 +988,7 @@ not in this repository. Install it into a separate directory with its `litex_set
 | `versions.sh` | Lists the URL and the commit of each repository of a LiteX installation |
 | `versions.txt` | The output of `versions.sh` for the installation that built the SoC below |
 | `tftpd.py` | A TFTP server that only reads, for the network boot of the BIOS |
-| `linux/` | The files for Linux and Debian on NaxRiscv: the rootfs script, the SD image script, the initramfs, two `boot.json`, and the hwmon driver of the XADC |
+| `linux/` | The files for Linux and Debian on NaxRiscv: the rootfs script, the SD image script, the initramfs, two `boot.json`, the kernel config fragment, the DTS script, and the drivers and tools for the XADC and the displays |
 
 To install LiteX and build the SoC:
 
@@ -1238,7 +1238,8 @@ The software, all outside this repository:
 - The DTB comes from `python3 -m litex.tools.litex_json2dts_linux csr.json`. For the SD card, use
   `--initrd disabled --root-device mmcblk0p2`. Then replace the bootargs with
   `console=liteuart earlycon=liteuart,0xf0001000 rootwait root=/dev/mmcblk0p2 rw`. The generator
-  puts a static `ip=` into the bootargs, and systemd-networkd uses DHCP instead.
+  puts a static `ip=` into the bootargs, and systemd-networkd uses DHCP instead. Since the F2FS card,
+  `litex/linux/mkdts.py csr.json` does these steps, and adds the node of the seven-segment digits.
 - Debian 13: `litex/linux/mkrootfs.sh` in a container. `litex/linux/mkdisk.sh` makes the image of
   the card.
 
@@ -1378,6 +1379,36 @@ slack was +0.635 ns, with 60,883 LUT. After a JTAG load, the module loaded, and 
 `lm-sensors`) showed VCCINT 1.04 V, VCCAUX 1.85 V, VCCBRAM 1.04 V and 49.8 °C. Five readings of
 `temp1_input`, one each second, were 49.7 to 50.3 °C. These agree with the XADC readings of section
 1.
+
+### The two seven-segment digits in Linux
+
+The `seven_seg` CSR (section 15, above) becomes a line display of two characters and two LEDs:
+
+- `litex/linux/adp-seven-seg.c` (GPL-2.0 or MIT) is an out-of-tree module, like the XADC driver.
+  The same `Kbuild` builds both. It uses the line display core of the kernel
+  (`drivers/auxdisplay/line-display.c`), which maps ASCII to seven segments.
+- Write text to `/sys/bus/platform/drivers/adp-seven-seg/*/linedisp.*/message`. The left digit
+  (7SEG2) shows the first character. A text of more than two characters scrolls.
+- The decimal points are the LEDs `adp:dp-left` and `adp:dp-right`, with any LED trigger.
+- `litex_json2dts_linux` does not know the CSR. `mkdts.py` adds the node, with the compatible
+  `adp-xc7k160,seven-seg`. By default the left point has the trigger `mmc0` (the SD card) and the
+  right point has `heartbeat`.
+- The kernel needs the LED class, the LED triggers and the line display core. `adp.config` sets
+  them; `LINEDISP` has no prompt, so `SEG_LED_GPIO=m` selects it.
+- `litex/linux/adp-7seg-temp.c` shows the FPGA temperature of the XADC on the digits. It keeps the
+  two sysfs files open, writes only a changed value, and does not fork. Build it with
+  `riscv64-linux-gnu-gcc -O2 -static`, and install it as `/usr/local/sbin/adp-7seg-temp`.
+  `litex/linux/rootfs/etc/systemd/system/adp-7seg-temp.service` starts it.
+
+Result **[measured, 2026-11-21]**: the modules loaded at boot, and the service wrote `45` while
+`sensors` showed 45.5 °C. The owner saw `45` and `46` on the digits, the heartbeat on the right
+point, and the left point during accesses to the SD card. The tool used 552 KiB of memory (RSS).
+
+When you copy files to the rootfs from a host, give them explicit owners and modes. On
+2026-11-21 a `tar` stream also carried its directories `etc` and `usr`, with mode 0740 from
+the umask of the host. `tar` gave that mode to `/etc` and `/usr` on the board. Then
+systemd-networkd, systemd-resolved and systemd-timesyncd could not start, and the board had no
+network. The card was repaired on the host.
 
 Problems that were found **[measured, 2026-11-21]**:
 

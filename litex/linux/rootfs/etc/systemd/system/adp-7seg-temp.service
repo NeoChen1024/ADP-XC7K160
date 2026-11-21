@@ -1,0 +1,10 @@
+[Unit]
+Description=FPGA temperature on the seven-segment digits
+After=systemd-udevd.service
+
+[Service]
+ExecStart=/usr/local/sbin/adp-7seg-temp
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
