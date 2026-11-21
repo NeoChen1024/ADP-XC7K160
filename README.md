@@ -297,10 +297,9 @@ does at power-on, and only that backup can restore the factory design. `jtag/fla
 tool here that writes U4:
 
 ```sh
-VIVADO=... XVCD=... sh jtag/flash_u4.sh --owner-asked design.bit
+VIVADO=... XVCD=... sh jtag/flash_u4.sh design.bit
 ```
 
-- Without `--owner-asked`, the script stops.
 - It makes an MCS file of the bitstream at address 0. It refuses a file that ends above `0x4000000`,
   because FA25 keeps the upper half out of reach.
 - Vivado loads its BPI programming design through JTAG. Then it erases the blocks of the file,

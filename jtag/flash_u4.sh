@@ -1,11 +1,10 @@
 #!/usr/bin/env sh
 # Writes a bitstream into the configuration flash U4, so that the FPGA loads it at power-on.
 #
-#   [VIVADO=/path/to/vivado] [XVC=host:port | XVCD=/path/to/xvcd-pico] sh flash_u4.sh --owner-asked design.bit
+#   [VIVADO=/path/to/vivado] [XVC=host:port | XVCD=/path/to/xvcd-pico] sh flash_u4.sh design.bit
 #
-# Run it only when the owner explicitly asks for this write (AGENTS.md). Without --owner-asked it
-# does nothing. U4 holds the factory design of Andes; README section 5 says what is in it and how a
-# backup is read.
+# Run it only when the owner explicitly asks for this write (AGENTS.md). README section 5 says what
+# U4 holds, and how a backup is read and restored.
 #
 # The script makes an MCS file of the bitstream at address 0 (BPI x16, 128 MiB part), and refuses a
 # file that goes above 0x4000000: the upper half of U4 is out of reach (FA25, README section 5).
@@ -14,11 +13,11 @@
 # bitstream. The cable is the same as for load.sh.
 set -eu
 here="$(cd "$(dirname "$0")" && pwd)"
-if [ $# -ne 2 ] || [ "$1" != "--owner-asked" ] || [ ! -f "$2" ]; then
-    echo "usage: sh flash_u4.sh --owner-asked design.bit (only when the owner asks for a write of U4)" >&2
+if [ $# -ne 1 ] || [ ! -f "$1" ]; then
+    echo "usage: sh flash_u4.sh design.bit" >&2
     exit 2
 fi
-bit="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
+bit="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 vivado="${VIVADO:-vivado}"
 cd "$(dirname "$bit")"
 name="$(basename "$bit" .bit)"
