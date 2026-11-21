@@ -937,7 +937,7 @@ not in this repository. Install it into a separate directory with its `litex_set
 | File | Contents |
 |---|---|
 | `adp_xc7k160_platform.py` | The LiteX platform. It reads the pins and the I/O standards from `pins.csv`, by the signal names of the manual |
-| `adp_xc7k160_target.py` | The SoC: a VexRiscv CPU, the BIOS, the UART, the buttons and the displays. It has no DDR3 yet |
+| `adp_xc7k160_target.py` | The SoC: a VexRiscv CPU, the BIOS, the UART, the 1 GiB DDR3 as main RAM, the buttons and the displays |
 | `versions.sh` | Lists the URL and the commit of each repository of a LiteX installation |
 | `versions.txt` | The output of `versions.sh` for the installation that built the SoC below |
 
@@ -974,6 +974,22 @@ The SoC has two CSRs besides the standard ones:
 
 `HW_RST_SW1` resets the MMCM, and thus the SoC. The BIOS console is 115200 8N1 on COM1.
 
+The DDR3:
+
+- LiteDRAM controls it with `K7DDRPHY` at a ratio of 1:4. Thus the data rate is 8 times the
+  system clock: DDR3-800 at 100 MHz.
+- The MMCM uses `SYSCLK` (200 MHz, `DIFF_SSTL15`). It makes the system clock, the 4× clock and
+  the 200 MHz reference of `IDELAYCTRL`.
+- The controller uses the timings of `MT41J256M16`. MIG uses the same substitute for the
+  PieceMakers part (section 8).
+- The I/O standards are the ones of MIG in `pins.csv`. The platform does not set
+  `VCCAUX_IO=HIGH`, because the FBG676 package has no 2.0 V VccAuxIO.
+- The platform adds `DCI_CASCADE {32}` to bank 33 when a design uses the DDR3 (section 8).
+- `--integrated-main-ram-size` gives an SoC without the DDR3 controller.
+
+The first result below is for the design of commit `53e20ab`. That design had no DDR3, and its
+MMCM used `OSCCLK1` (20 MHz).
+
 Result **[measured, 2026-11-21]**: the SoC was built at the commits of `litex/versions.txt` (LiteX
 `afed66238`), with Python 3.13 and Vivado 2025.2.1:
 
@@ -985,6 +1001,31 @@ Result **[measured, 2026-11-21]**: the SoC was built at the commits of `litex/ve
   was pushed.
 - `mem_write 0xf0001800 0x3850` wrote `seven_seg`, and `mem_read` read the value back. This
   value shows `Lr`. A person did not look at the displays.
+
+Result with the DDR3 **[measured, 2026-11-21]**, at the same commits:
+
+- The build was for -1, with a 100 MHz system clock (DDR3-800, CL 6, CWL 5). The setup slack was
+  +1.487 ns and the hold slack was +0.054 ns. The design used 5,241 LUT, 4,705 FF and 39.5 block
+  RAM tiles.
+- `jtag/load.sh` loaded the bitstream 6 times. After each load, the BIOS calibrated the DDR3 and
+  its memory test of 2 MiB passed.
+- The calibration found these values after each of the 6 loads:
+  - The Cmd/Clk delay was 15 taps. The write latency was 6 for each byte.
+  - Read leveling found a window in bitslip 2 and in bitslip 3 for each byte. The two windows had
+    almost the same width. For byte 1, the BIOS selected bitslip 3 after 3 loads, and bitslip 2
+    after the other 3.
+- After the first load, `mem_test 0x40000000 0x40000000` tested all of the 1 GiB in 208 seconds
+  without error. It writes random data to all addresses and reads it back, so an alias of an
+  address bit also gives errors.
+- The BIOS measured 63.5 MiB/s for a sequential write and 62.3 MiB/s for a sequential read (2 MiB).
+
+Result without the DDR3 **[measured, 2026-11-21]**: the same design was built with
+`--integrated-main-ram-size 0x10000`. Its MMCM used `SYSCLK`. The setup slack was +1.499 ns, and
+the design used 2,183 LUT and 1,777 FF. After a load, the BIOS banner came on COM1, and the memory
+test of the 64 KiB main RAM passed.
+
+These are results for one chip at room temperature. A rate above DDR3-800 was not tried with
+LiteX.
 
 Problems that were found **[measured, 2026-11-21]**:
 
