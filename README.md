@@ -730,7 +730,7 @@ while `PHY_PWRDWN` (Y20) is low.
   `SD_DAT2`, the card answered CRC status `101` and kept the contents. Thus **`SD_CMD` and
   `SD_DAT0` to `SD_DAT3` work in both directions**.
 - The speed was only 238 kHz, because the workbench makes each clock from a UART command. 25 MHz
-  and 50 MHz were not tested.
+  and 50 MHz were not tested. The LiteX SoC later read blocks at 21.875 MHz (section 15).
 
 Firmware must know two behaviours. Both are behaviours of this card; a different card can be
 different.
@@ -829,7 +829,8 @@ Other items:
 - The polarity of `PHY_PWRDWN`: it is known only that low is normal operation.
 - Ethernet was tested only at 100BASE-TX full duplex. 10 Mbit/s and half duplex (`MAC_COL`,
   `MAC_CRS`) were not tested.
-- The SD card was tested only at 238 kHz, and only with one card.
+- The SD card was tested only with one card. Writes were tested only at 238 kHz. Reads were
+  tested at 238 kHz and 21.875 MHz, and not at 50 MHz (high speed).
 - The margin above the -1 marking (400 MHz, DDR3-1600): there is a result for one chip at room
   temperature only.
 - LiteX at DDR3-1400 (section 15): the read window is about 5 IDELAY taps. The memory had one test
@@ -941,7 +942,7 @@ not in this repository. Install it into a separate directory with its `litex_set
 | File | Contents |
 |---|---|
 | `adp_xc7k160_platform.py` | The LiteX platform. It reads the pins and the I/O standards from `pins.csv`, by the signal names of the manual |
-| `adp_xc7k160_target.py` | The SoC: a VexRiscv CPU, the BIOS, the UART, the 1 GiB DDR3 as main RAM, the buttons and the displays |
+| `adp_xc7k160_target.py` | The SoC: a VexRiscv CPU, the BIOS, the UART, the 1 GiB DDR3 as main RAM, the buttons and the displays. As options: the LiteDRAM BIST, Etherbone on the 10/100 Ethernet, and the SD card (read only) |
 | `versions.sh` | Lists the URL and the commit of each repository of a LiteX installation |
 | `versions.txt` | The output of `versions.sh` for the installation that built the SoC below |
 
@@ -969,14 +970,19 @@ VIVADO=... XVCD=... python3 $A/litex/adp_xc7k160_target.py --load
 - `--load` uses `jtag/load.sh`. No option of the platform or the target writes a flash. The SoC
   holds `FCS_B`, `FOE_B` and `FWE_B` high (section 5).
 
-The SoC has two CSRs besides the standard ones:
+The SoC has three CSRs besides the standard ones:
 
 | CSR | Bits |
 |---|---|
-| `buttons` | 0 to 7: SW1 to SW8 pushed. 8: `PWR_SW1` pushed. 9: `PORn` high |
+| `buttons` | 0 to 7: SW1 to SW8 pushed. 8: `PWR_SW1` pushed |
+| `status` | 0: `PORn` high (the peripherals are out of reset). 1: a card is in the SD socket (`SD_CDn` low) |
 | `seven_seg` | 0 to 6: segments A to G of 7SEG1 (right). 7: its decimal point. 8 to 15: the same for 7SEG2 (left). A 1 lights the segment |
 
-`HW_RST_SW1` resets the MMCM, and thus the SoC. The BIOS console is 115200 8N1 on COM1.
+`HW_RST_SW1` resets the MMCM, and thus the SoC. The BIOS console is 115200 8N1 on COM1. The SoC
+always drives `PHY_PWRDWN` low and `SD_PWR_ON` high (section 11).
+
+In commits `53e20ab` to `6bd8baa`, `buttons` had `PORn` in bit 9, and there was no `status`. The
+first result below used that layout.
 
 The DDR3:
 
@@ -1076,6 +1082,56 @@ Calibration at 1400, after 6 JTAG loads **[measured, 2026-11-21]**:
   bit at 1400 MT/s is 0.71 ns.
 
 These are results for one chip at room temperature.
+
+### Ethernet and the SD card with LiteX
+
+The two options:
+
+- `--with-etherbone --eth-ip A.B.C.D` adds the MII PHY of LiteEth and Etherbone. Etherbone is a
+  UDP/IP stack in the FPGA. It answers ARP, ping and Wishbone accesses on UDP port 1234. It does
+  not send a frame by itself. The CPU does not take part.
+- `--with-sdcard` adds LiteSDCard on the 4-bit bus with `mode="read"`. The SoC has no path that
+  writes the card, and the BIOS has no `sdcard_write` command.
+
+Limits of the Ethernet option:
+
+- The target has no default IP address. Give an address that no station answers on that LAN.
+- The MAC address is `02:ad:b0:00:00:01`, the locally administered address of the workbench.
+- The `eth` resource has no `COL`, `CRS` and `RX_ER`, and no pin of the PHY has `PULLUP`. Vivado
+  puts its weak pull-down on the unused strap pins, which gives address 0 and MII (section 11).
+- Etherbone has `buffer_depth=255`. With the default of 16, Etherbone dropped each record of more
+  than 16 words without an error. `CommUDP.write` of LiteX does not split a write into records.
+  A record holds at most 255 words.
+- The ICMP echo of LiteEth answers only small packets. Its FIFO has 128 bytes
+  (`liteeth/core/icmp.py`).
+
+To use Etherbone from the host:
+
+```sh
+litex_server --udp --udp-ip A.B.C.D        # listens on localhost:1234
+litex_cli --regs                           # reads the CSRs; or use litex.RemoteClient in Python
+```
+
+Results **[measured, 2026-11-21]**. The board was on the same VLAN as the host, with 100BASE-TX.
+The SoC was built as -2 at 175 MHz with `--with-etherbone --with-sdcard`: setup slack +0.197 ns,
+9,471 LUT, 8,783 FF.
+
+- MDIO (BIOS `mdio_dump 0 7`): BMCR `3100`, BMSR `7869` (link up, autonegotiation complete), PHY
+  ID `0181 B8B1`, ANLPAR `C1E1`. Thus the PHY took address 0.
+- Ping with 56 and 100 bytes of data: no loss, 0.077 ms average for 10 packets. Ping with 200
+  bytes or more got no answer, because of the ICMP FIFO.
+- Etherbone read the identifier, the CSRs and the main RAM correctly. One read of one word took
+  0.2 to 0.3 ms through `litex_server`.
+- With `buffer_depth=255`, bursts of 1 to 255 words and 1 MiB of random words in the DDR3 were
+  written and read back without error.
+- Through `litex_server`, the write of 1 MiB ran at 11.15 MiB/s, which is about 94 Mbit/s. The read
+  was slow (0.04 MiB/s) because of the Python code of the host. A UDP socket on the host that
+  sent one encoded read of 255 words got the answer in 0.236 ms (4.1 MiB/s).
+- The SD card was the card of section 11. At boot the BIOS found a FAT file system on it, and found
+  no `boot.json` or `boot.bin` (FatFs error 4, `FR_NO_FILE`).
+- `sdcard_init` passed. Blocks 0, 8192 and 8193 were read at 399 kHz and at 21.875 MHz, and the
+  data was the same. Block 0 is an MBR with the signature `55 AA`.
+- The BIOS asks for 25 MHz. The divider makes 21.875 MHz from 175 MHz.
 
 Problems that were found **[measured, 2026-11-21]**:
 

@@ -11,13 +11,22 @@
 # With --integrated-main-ram-size the SoC has no DDR3 controller. With --with-bist the SoC also has
 # the LiteDRAM BIST on the native port (BIOS: sdram_bist, sdram_hw_test).
 #
+# --with-etherbone --eth-ip A.B.C.D adds Etherbone on the 10/100 Ethernet: a UDP/IP stack in the
+# FPGA that answers ARP, ping, and Wishbone accesses on UDP port 1234 (litex_server --udp). It
+# only answers; it sends nothing by itself. Use an address that no station answers on that LAN.
+# The MAC address is locally administered, the same as the workbench's.
+#
+# --with-sdcard adds LiteSDCard on the 4-bit bus, for reading only: the SoC has no path that
+# writes the card (AGENTS.md: a write to the card needs the owner's permission each time).
+#
 # Run it with the Python of a LiteX installation (README section 15). The build writes to
 # DIR, ./build/adp_xc7k160 in the current directory by default. It refuses a directory inside this
 # repository. --load uses ../jtag/load.sh, so set VIVADO and XVCD (or XVC) as for that script. If
 # timing is not met, the script stops before the load with exit status 3. No option writes a flash.
 #
 # The SoC has these CSRs besides the standard ones:
-#   buttons    bits 0-7: SW1 to SW8 pushed; bit 8: PWR_SW1 pushed; bit 9: PORn high
+#   buttons    bits 0-7: SW1 to SW8 pushed; bit 8: PWR_SW1 pushed
+#   status     bit 0: PORn high (the peripherals are out of reset); bit 1: a card is in the SD socket
 #   seven_seg  bits 0-6: segments A to G of 7SEG1 (right); bit 7: its point; bits 8-15: 7SEG2.
 #              A 1 lights the segment. All are off after reset.
 # The BIOS console is 115200 8N1 on the DB9 (COM1).
@@ -38,6 +47,8 @@ from litex.soc.integration.soc_core import SoCCore
 
 from litedram.modules import MT41J256M16
 from litedram.phy import s7ddrphy
+
+from liteeth.phy.mii import LiteEthPHYMII
 
 import adp_xc7k160_platform
 
@@ -64,7 +75,8 @@ class _CRG(LiteXModule):
 
 
 class BaseSoC(SoCCore):
-    def __init__(self, sys_clk_freq=175e6, speedgrade=-2, with_bist=False, **kwargs):
+    def __init__(self, sys_clk_freq=175e6, speedgrade=-2, with_bist=False,
+        with_etherbone=False, eth_ip=None, with_sdcard=False, **kwargs):
         platform = adp_xc7k160_platform.Platform(speedgrade=speedgrade)
 
         with_dram = not kwargs.get("integrated_main_ram_size")
@@ -90,13 +102,33 @@ class BaseSoC(SoCCore):
         bpi = platform.request("bpi_ctrl")
         self.comb += [bpi.cs_n.eq(1), bpi.oe_n.eq(1), bpi.we_n.eq(1)]
 
-        buttons = Signal(10)
+        buttons = Signal(9)
         self.comb += buttons.eq(Cat(
             ~Cat(*[platform.request("user_btn", i) for i in range(8)]),
             ~platform.request("pwr_btn_n"),
-            platform.request("por_n"),
         ))
         self.buttons = GPIOIn(buttons)
+
+        status = Signal(2)
+        self.comb += status.eq(Cat(platform.request("por_n"), ~platform.request("sd_cd_n")))
+        self.status = GPIOIn(status)
+
+        # The two known states: the PHY runs, and the socket has power (section 11).
+        self.comb += [platform.request("eth_pwrdwn").eq(0), platform.request("sd_pwr_on").eq(1)]
+
+        if with_etherbone:
+            # PORn holds the PHY in reset for about 385 ms after the load (section 9). The core
+            # needs nothing from the PHY before that.
+            self.ethphy = LiteEthPHYMII(
+                clock_pads = platform.request("eth_clocks"),
+                pads       = platform.request("eth"))
+            # A record of more words than buffer_depth is dropped without an error, and the host
+            # tools of LiteX do not split a write. 255 is the largest count that a record can hold.
+            self.add_etherbone(phy=self.ethphy, ip_address=eth_ip, mac_address=0x02adb0000001,
+                buffer_depth=255)
+
+        if with_sdcard:
+            self.add_sdcard(mode="read")
 
         segments = Signal(16)
         self.seven_seg = GPIOOut(segments)
@@ -125,9 +157,15 @@ def main():
     parser.add_target_argument("--sys-clk-freq", default=175e6, type=float, help="System clock frequency.")
     parser.add_target_argument("--speedgrade",   default=-2, type=int, choices=[-1, -2], help="Speed grade for Vivado (README section 2).")
     parser.add_target_argument("--with-bist",    action="store_true", help="Add the LiteDRAM BIST.")
+    parser.add_target_argument("--with-etherbone", action="store_true", help="Add Etherbone on the 10/100 Ethernet.")
+    parser.add_target_argument("--eth-ip",       default=None, help="IP address of Etherbone; required with --with-etherbone.")
+    parser.add_target_argument("--with-sdcard",  action="store_true", help="Add LiteSDCard, read only.")
     args = parser.parse_args()
+    if args.with_etherbone and not args.eth_ip:
+        parser.error("--with-etherbone needs --eth-ip: an address that no station answers on the LAN")
 
     soc = BaseSoC(sys_clk_freq=args.sys_clk_freq, speedgrade=args.speedgrade, with_bist=args.with_bist,
+        with_etherbone=args.with_etherbone, eth_ip=args.eth_ip, with_sdcard=args.with_sdcard,
         **parser.soc_argdict)
     builder = Builder(soc, **parser.builder_argdict)
     if _inside(builder.output_dir, adp_xc7k160_platform._REPOSITORY):

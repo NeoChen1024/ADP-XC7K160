@@ -18,8 +18,12 @@
 #   seven_seg 0-1 7SEG1 (right) and 7SEG2 (left), low lights a segment (section 9)
 #   bpi_ctrl      FCS_B, FOE_B, FWE_B of U4 (section 5). A design must drive all three high
 #   ddram         the 32-bit DDR3, two x16 devices, 1 GiB (section 8)
-#
-# Ethernet and the SD card are not here yet.
+#   eth_clocks    MAC_TX_CLK, MAC_RX_CLK of the 10/100 PHY, 25 MHz at 100 Mbit/s (section 11)
+#   eth           the MII of the PHY, without its straps COL, CRS and RX_ER (see _eth below)
+#   eth_pwrdwn    PHY_PWRDWN; low is normal operation (section 11)
+#   sdcard        SD_CLK, SD_CMD, SD_DAT0 to SD_DAT3 (section 11)
+#   sd_cd_n       SD_CDn, low with a card in the socket
+#   sd_pwr_on     SD_PWR_ON, the enable of the socket power; 1 is on
 
 import csv
 import os
@@ -77,6 +81,28 @@ def _ddram():
     )
 
 
+def _eth():
+    # The PHY reads RXD0-3, CRS, COL, RX_DV, RX_ER and TX_CLK as straps when PORn releases it, after
+    # the design is in operation. A pull-up on them isolates the PHY (section 11): never add PULLUP
+    # here. The MII PHY of LiteEth does not use COL, CRS and RX_ER, so they are left out, and
+    # Vivado puts its weak pull-down on them, which gives address 0 and MII.
+    return [
+        ("eth_clocks", 0,
+            Subsignal("tx", *_io("MAC_TX_CLK")),
+            Subsignal("rx", *_io("MAC_RX_CLK")),
+        ),
+        ("eth", 0,
+            Subsignal("rx_dv",   *_io("MAC_RX_DV")),
+            Subsignal("rx_data", *_io(*[f"MAC_RXD{i}" for i in range(4)])),
+            Subsignal("tx_en",   *_io("MAC_TX_EN")),
+            Subsignal("tx_data", *_io(*[f"MAC_TXD{i}" for i in range(4)])),
+            Subsignal("mdc",     *_io("MAC_MDC")),
+            Subsignal("mdio",    *_io("MAC_MDIO")),
+        ),
+        ("eth_pwrdwn", 0, *_io("PHY_PWRDWN")),
+    ]
+
+
 _io_list = [
     ("clk20", 0, *_io("OSCCLK1")),
     ("clk200", 0,
@@ -112,6 +138,16 @@ _io_list = [
     ),
 
     _ddram(),
+    *_eth(),
+
+    # The board has pull-ups on SD_CMD and SD_DAT0 to SD_DAT3, and none on SD_CLK.
+    ("sdcard", 0,
+        Subsignal("clk",  *_io("SD_CLK")),
+        Subsignal("cmd",  *_io("SD_CMD")),
+        Subsignal("data", *_io(*[f"SD_DAT{i}" for i in range(4)])),
+    ),
+    ("sd_cd_n",   0, *_io("SD_CDn")),
+    ("sd_pwr_on", 0, *_io("SD_PWR_ON")),
 ]
 
 
