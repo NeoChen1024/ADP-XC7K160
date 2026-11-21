@@ -74,8 +74,11 @@ README from here; do not copy pins, figures or limits into this guide.
   board. They are not part of `auto`. Run them only when the owner permits it in that session.
   `net` sends only to the host that runs it, and to the ARP broadcast address.
 - The LiteX SoC with `--with-etherbone` answers on the LAN. Load it only when the owner permits
-  it in that session. Its IP address is a build option and does not go into the repository. The
-  LiteX SoC has no path that writes the SD card; keep it so.
+  it in that session. Its IP address is a build option and does not go into the repository.
+- The LiteX SoC writes the SD card only when it is built with `--with-sdcard-write`. Use that
+  option only with a card that the owner gave for writing. On 2026-11-21 the owner gave the card
+  that is now in the socket for the Debian work: it can be written, and its old contents need no
+  copy. Any other card needs the owner's permission.
 - A new command that sends to a network or writes to a medium follows the same pattern: it is
   explicit, it is not part of `auto`, and the README gives its limits.
 - A test that overwrites data first stores the original data in a file. It deletes the file only

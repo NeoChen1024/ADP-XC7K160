@@ -16,8 +16,14 @@
 # only answers; it sends nothing by itself. Use an address that no station answers on that LAN.
 # The MAC address is locally administered, the same as the workbench's.
 #
+# --with-ethernet --eth-ip A.B.C.D --remote-ip E.F.G.H adds the LiteEth MAC, for the CPU (BIOS
+# netboot, the liteeth driver of Linux). The BIOS tries a TFTP boot from the remote address only
+# if no other boot medium works; --tftp-port moves its server from port 69, so that a user can run
+# it. --with-etherbone and --with-ethernet exclude each other.
+#
 # --with-sdcard adds LiteSDCard on the 4-bit bus, for reading only: the SoC has no path that
-# writes the card (AGENTS.md: a write to the card needs the owner's permission each time).
+# writes the card. --with-sdcard-write also adds the write path. Use it only with a card that the
+# owner gave for writing (AGENTS.md).
 #
 # Run it with the Python of a LiteX installation (README section 15). The build writes to
 # DIR, ./build/adp_xc7k160 in the current directory by default. It refuses a directory inside this
@@ -76,7 +82,8 @@ class _CRG(LiteXModule):
 
 class BaseSoC(SoCCore):
     def __init__(self, sys_clk_freq=175e6, speedgrade=-2, with_bist=False,
-        with_etherbone=False, eth_ip=None, with_sdcard=False, **kwargs):
+        with_etherbone=False, with_ethernet=False, eth_ip=None, remote_ip=None, tftp_port=69,
+        with_sdcard=False, with_sdcard_write=False, **kwargs):
         platform = adp_xc7k160_platform.Platform(speedgrade=speedgrade)
 
         with_dram = not kwargs.get("integrated_main_ram_size")
@@ -116,19 +123,24 @@ class BaseSoC(SoCCore):
         # The two known states: the PHY runs, and the socket has power (section 11).
         self.comb += [platform.request("eth_pwrdwn").eq(0), platform.request("sd_pwr_on").eq(1)]
 
-        if with_etherbone:
+        if with_etherbone or with_ethernet:
             # PORn holds the PHY in reset for about 385 ms after the load (section 9). The core
             # needs nothing from the PHY before that.
             self.ethphy = LiteEthPHYMII(
                 clock_pads = platform.request("eth_clocks"),
                 pads       = platform.request("eth"))
+        if with_etherbone:
             # A record of more words than buffer_depth is dropped without an error, and the host
             # tools of LiteX do not split a write. 255 is the largest count that a record can hold.
             self.add_etherbone(phy=self.ethphy, ip_address=eth_ip, mac_address=0x02adb0000001,
                 buffer_depth=255)
+        if with_ethernet:
+            self.add_ethernet(phy=self.ethphy, local_ip=eth_ip, remote_ip=remote_ip,
+                mac_address=0x02adb0000001)
+            self.add_constant("TFTP_SERVER_PORT", tftp_port)
 
-        if with_sdcard:
-            self.add_sdcard(mode="read")
+        if with_sdcard or with_sdcard_write:
+            self.add_sdcard(mode="read+write" if with_sdcard_write else "read")
 
         segments = Signal(16)
         self.seven_seg = GPIOOut(segments)
@@ -159,13 +171,22 @@ def main():
     parser.add_target_argument("--with-bist",    action="store_true", help="Add the LiteDRAM BIST.")
     parser.add_target_argument("--with-etherbone", action="store_true", help="Add Etherbone on the 10/100 Ethernet.")
     parser.add_target_argument("--eth-ip",       default=None, help="IP address of Etherbone; required with --with-etherbone.")
+    parser.add_target_argument("--with-ethernet", action="store_true", help="Add the LiteEth MAC for the CPU.")
+    parser.add_target_argument("--remote-ip",    default=None, help="TFTP server of the BIOS; required with --with-ethernet.")
+    parser.add_target_argument("--tftp-port",    default=69, type=int, help="UDP port of the TFTP server of the BIOS.")
     parser.add_target_argument("--with-sdcard",  action="store_true", help="Add LiteSDCard, read only.")
+    parser.add_target_argument("--with-sdcard-write", action="store_true", help="Add LiteSDCard with its write path.")
     args = parser.parse_args()
-    if args.with_etherbone and not args.eth_ip:
-        parser.error("--with-etherbone needs --eth-ip: an address that no station answers on the LAN")
+    if (args.with_etherbone or args.with_ethernet) and not args.eth_ip:
+        parser.error("Ethernet needs --eth-ip: an address that no station answers on the LAN")
+    if args.with_etherbone and args.with_ethernet:
+        parser.error("--with-etherbone and --with-ethernet exclude each other")
+    if args.with_ethernet and not args.remote_ip:
+        parser.error("--with-ethernet needs --remote-ip, or the BIOS asks the LAN for 192.168.1.100")
 
     soc = BaseSoC(sys_clk_freq=args.sys_clk_freq, speedgrade=args.speedgrade, with_bist=args.with_bist,
-        with_etherbone=args.with_etherbone, eth_ip=args.eth_ip, with_sdcard=args.with_sdcard,
+        with_etherbone=args.with_etherbone, with_ethernet=args.with_ethernet, eth_ip=args.eth_ip,
+        remote_ip=args.remote_ip, tftp_port=args.tftp_port, with_sdcard=args.with_sdcard, with_sdcard_write=args.with_sdcard_write,
         **parser.soc_argdict)
     builder = Builder(soc, **parser.builder_argdict)
     if _inside(builder.output_dir, adp_xc7k160_platform._REPOSITORY):

@@ -1,0 +1,11 @@
+# The list for usr/gen_init_cpio of the kernel. Run it in a directory with busybox and initramfs-init:
+#   /path/to/linux-build/usr/gen_init_cpio initramfs-list | gzip -9 > initramfs.cpio.gz
+dir /bin 755 0 0
+dir /dev 755 0 0
+nod /dev/console 600 0 0 c 5 1
+dir /proc 755 0 0
+dir /sys 755 0 0
+dir /tmp 1777 0 0
+dir /mnt 755 0 0
+file /bin/busybox busybox 755 0 0
+file /init initramfs-init 755 0 0

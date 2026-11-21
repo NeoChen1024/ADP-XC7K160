@@ -35,7 +35,7 @@ text says that it is not known.
 | `example-ddr3-test/` | An example that builds alone: MIG, a 1 GiB memory test and a UART report. It shows the clocks, the UART, MIG and the configuration flash pins |
 | `tools/` | The script that makes `pins.csv` and `package-pins.csv`, and its two inputs (the pin table of the manual, the package data of Vivado). A new board finding goes into `tools/tables.py`; then make the tables again |
 | `workbench/` | A design and a host script that measure the board: the level and frequency of each pin, I2C, MDIO, Ethernet, SD, audio, buttons, displays. See section 14 |
-| `litex/` | A LiteX platform and a LiteX SoC for this board, and the versions of LiteX that built it. See section 15 |
+| `litex/` | A LiteX platform and a LiteX SoC for this board, the versions of LiteX that built it, and the files that boot Linux and Debian on it. See section 15 |
 
 Not in this repository:
 
@@ -829,10 +829,13 @@ Other items:
 - The polarity of `PHY_PWRDWN`: it is known only that low is normal operation.
 - Ethernet was tested only at 100BASE-TX full duplex. 10 Mbit/s and half duplex (`MAC_COL`,
   `MAC_CRS`) were not tested.
-- The SD card was tested only with one card. Writes were tested only at 238 kHz. Reads were
-  tested at 238 kHz and 21.875 MHz, and not at 50 MHz (high speed).
+- The SD card was tested only with one card. The workbench wrote it at 238 kHz, and Linux on
+  NaxRiscv wrote 2.3 GiB with `litex-mmc` at a clock that was not recorded. Reads were tested at
+  238 kHz and 21.875 MHz, and not at 50 MHz (high speed).
 - The margin above the -1 marking (400 MHz, DDR3-1600): there is a result for one chip at room
   temperature only.
+- Debian on NaxRiscv (section 15): it ran for less than one hour, at room temperature. The write
+  speed of the SD card under Linux was not measured alone.
 - LiteX at DDR3-1400 (section 15): the read window is about 5 IDELAY taps. The memory had one test
   of all 1 GiB and at least two runs of 54 GiB of BIST. Long use and other temperatures were not
   tested.
@@ -945,6 +948,8 @@ not in this repository. Install it into a separate directory with its `litex_set
 | `adp_xc7k160_target.py` | The SoC: a VexRiscv CPU, the BIOS, the UART, the 1 GiB DDR3 as main RAM, the buttons and the displays. As options: the LiteDRAM BIST, Etherbone on the 10/100 Ethernet, and the SD card (read only) |
 | `versions.sh` | Lists the URL and the commit of each repository of a LiteX installation |
 | `versions.txt` | The output of `versions.sh` for the installation that built the SoC below |
+| `tftpd.py` | A TFTP server that only reads, for the network boot of the BIOS |
+| `linux/` | The files for Linux and Debian on NaxRiscv: the rootfs script, the SD image script, the initramfs and two `boot.json` |
 
 To install LiteX and build the SoC:
 
@@ -1133,11 +1138,114 @@ The SoC was built as -2 at 175 MHz with `--with-etherbone --with-sdcard`: setup 
   data was the same. Block 0 is an MBR with the signature `55 AA`.
 - The BIOS asks for 25 MHz. The divider makes 21.875 MHz from 175 MHz.
 
+### Linux and Debian with NaxRiscv
+
+NaxRiscv is an out-of-order RV64GC core of SpinalHDL. The SoC below runs OpenSBI, Linux and Debian
+13 from the SD card. The CPU runs at the system clock, so the DDR3 runs at DDR3-800.
+
+The build needs JDK 17 and sbt, in addition to LiteX. At the first build, LiteX clones NaxRiscv
+`9f452d5` with SpinalHDL `c362657` into its `pythondata-cpu-naxriscv` package. sbt then makes the
+Verilog of the core. The SoC was built with these options:
+
+```sh
+export JAVA_HOME=/path/to/java-17-openjdk PATH=/path/to/sbt/bin:$PATH
+python3 $A/litex/adp_xc7k160_target.py --build \
+    --cpu-type naxriscv --xlen 64 --with-fpu --with-rvc --with-coherent-dma --cpu-count 2 \
+    --integrated-sram-size 0x4000 --sys-clk-freq 100e6 \
+    --with-ethernet --eth-ip A.B.C.D --remote-ip E.F.G.H --tftp-port 6069 \
+    --with-sdcard-write --soc-json csr.json
+```
+
+- `--with-ethernet` adds the LiteEth MAC, which the `liteeth` driver of Linux uses. The BIOS uses it
+  for a TFTP boot from the remote address. `--tftp-port` moves that server away from port 69.
+- `--with-sdcard-write` gives Linux a writable card. Use it only with a card for writing (AGENTS.md).
+- The 8 KiB default SRAM left less than 2 KiB for the stack of the BIOS. Thus the SRAM is 16 KiB.
+
+The builds of 2026-11-21, as -2 at 100 MHz (Vivado 2025.2.1):
+
+| Cores | Setup slack | LUT | FF | Block RAM tiles | LUT of NaxRiscv alone |
+|---|---|---|---|---|---|
+| 1 | +1.100 ns | 34,916 | 25,965 | 91.5 | 29,067 |
+| 2 | +1.204 ns | 60,719 | 41,991 | 103.5 | 50,458 |
+
+The estimate of `report_power` for these builds is below. It is vectorless, Vivado gives it the
+confidence "Low", and it assumes 25 °C ambient air with a heat sink. It does not include the DDR3
+devices, the PHY or the regulators.
+
+| Supply | 1 core | 2 cores |
+|---|---|---|
+| Vccint (1.0 V) | 0.649 A | 0.928 A |
+| Vccaux (1.8 V) | 0.311 A | 0.310 A |
+| Vcco 1.5 V (DDR3 banks) | 0.242 A | 0.237 A |
+| Vcco 3.3 V | 0.002 A | 0.002 A |
+| Total on the chip | 1.624 W | 1.895 W |
+
+The software, all outside this repository:
+
+- Linux 6.18.64: `make ARCH=riscv defconfig`, and then `SERIAL_LITEUART`,
+  `SERIAL_LITEUART_CONSOLE`, `LITEX_SOC_CONTROLLER`, `LITEX_LITEETH` and `MMC_LITEX` set to `y`.
+  The compiler was `riscv64-linux-gnu-gcc` 16.2.1 of the host.
+- OpenSBI v1.9: `make PLATFORM=generic FW_TEXT_START=0x40f00000 FW_JUMP=y FW_JUMP_ADDR=0x41000000
+  FW_JUMP_FDT_ADDR=0x46000000`. Its console is the LiteX UART, through the DTB.
+- The DTB comes from `python3 -m litex.tools.litex_json2dts_linux csr.json`. For the SD card, use
+  `--initrd disabled --root-device mmcblk0p2`. Then replace the bootargs with
+  `console=liteuart earlycon=liteuart,0xf0001000 rootwait root=/dev/mmcblk0p2 rw`. The generator
+  puts a static `ip=` into the bootargs, and systemd-networkd uses DHCP instead.
+- Debian 13: `litex/linux/mkrootfs.sh` in a container. `litex/linux/mkdisk.sh` makes the image of
+  the card.
+
+The places in the DDR3 (`boot-sd.json` and `boot-net.json` give them to the BIOS):
+
+| Address | Contents |
+|---|---|
+| `0x40f00000` | OpenSBI (the DTB reserves 512 KiB) |
+| `0x41000000` | Linux `Image` (27 MB) |
+| `0x46000000` | DTB |
+| `0x48000000` | initramfs, for the network boot only |
+
+The BIOS gives `r1`, `r2` and `r3` of `boot.json` to `a0`, `a1` and `a2`. OpenSBI wants the hart
+ID in `a0` and the DTB in `a1`. Thus `r1` is 0 and `r2` is the DTB address. With the DTB address
+in `r1`, OpenSBI stopped without output. The defaults of LiteX put the Image at `0x40000000` and
+the initrd at `0x41000000`. A 27 MB Image then overlaps OpenSBI and the initrd.
+
+To write a card for the first time:
+
+1. Run `litex/tftpd.py` on the host with `Image`, `opensbi.bin`, the DTB with the initramfs, the
+   initramfs and `boot-net.json` as `boot.json`. A firewall on the host must permit UDP from the
+   board to that port.
+2. Load the bitstream. The BIOS tries the card, then the network. If the card has a `boot.json`,
+   push Q at "Press Q or ESC" and give the command `netboot`.
+3. In the shell of the initramfs, give `nc -l -p 5000 | gunzip | dd of=/dev/mmcblk0 bs=1M`.
+4. On the host, send the image: `ncat --send-only A.B.C.D 5000 < disk.img.gz`.
+5. Load the bitstream again. The BIOS boots from the card.
+6. In Debian, give `growpart /dev/mmcblk0 2` and `resize2fs /dev/mmcblk0p2`.
+
+Results **[measured, 2026-11-21]**, with the 32 GB card of section 11:
+
+- One core, network boot: the BIOS loaded the four files through TFTP. Linux reached the shell of
+  the initramfs 14 seconds after the start of the kernel. Linux found `liteeth`, `litex-mmc` and the card.
+- Linux showed the ISA `rv64imafdc_zicntr_zaamo_zalrsc_zca_zcd` and the MMU `sv39`. 964 MiB of
+  memory were available.
+- The board wrote the image of 2.3 GiB through `nc | gunzip | dd`. It wrote about 690 MB in the
+  first 13 minutes; `gunzip` used most of the CPU time. Then `md5sum` on the board gave the same
+  values as the host for both partitions. It read the 2.25 GiB in 932 seconds.
+- One core, first boot from the card: Debian 13.7 reached the login prompt. `systemd-analyze`
+  gave 17.0 s (kernel) + 156.8 s (userspace). No unit failed. DHCP gave an address, and SSH with
+  the key worked. `growpart` and `resize2fs` grew the root file system to 29 GB.
+- The board has no clock with a battery. Debian started at its built-in date, and `apt` refused
+  the signatures of the archive. After the clock was set, `apt-get install systemd-timesyncd`
+  worked; `mkrootfs.sh` now includes it. `apt-get update` fetched 16.4 MB at 93 kB/s.
+- Two cores, second boot from the card: OpenSBI found 2 harts and Linux brought up 2 CPUs.
+  `systemd-analyze` gave 16.3 s + 97.7 s. The first boot had more work (for example the machine
+  ID), so the two boot times do not compare the cores.
+- Two cores: `head -c 32M /dev/zero | sha256sum` took 13.6 s. Two of them in parallel took 14.8 s.
+
 Problems that were found **[measured, 2026-11-21]**:
 
 - The BIOS command `ident` shows `-`. The banner shows the identifier correctly. At this LiteX
   commit the BIOS reads the macro `CSR_IDENTIFIER_MEM_BASE_VA`, and LiteX does not generate it.
   This is a problem of LiteX, and not of the board.
+- `litex_json2dts_linux` accepts `--initrd-start` only as a decimal number.
 - After the BIOS command `reboot`, the host read the banner as wrong characters. The text after a
   pause was correct. A probable cause: the reset stopped a character in the middle, and the UART
   of the host then took a data bit as a start bit. A JTAG load gives a correct banner.
