@@ -24,6 +24,8 @@
 #   sdcard        SD_CLK, SD_CMD, SD_DAT0 to SD_DAT3 (section 11)
 #   sd_cd_n       SD_CDn, low with a card in the socket
 #   sd_pwr_on     SD_PWR_ON, the enable of the socket power; 1 is on
+#   ac97          the AC-link of the ALC203 codec (section 11). BIT_CLK comes from the codec, on a
+#                 pin that is not clock capable (K26)
 
 import csv
 import os
@@ -147,6 +149,15 @@ _io_list = [
         Subsignal("data", *_io(*[f"SD_DAT{i}" for i in range(4)])),
     ),
     ("sd_cd_n",   0, *_io("SD_CDn")),
+
+    # SYNC and SDATA_OUT must be low while AC97_RSTn rises (section 11).
+    ("ac97", 0,
+        Subsignal("bit_clk",   *_io("AC97_BCLK/I2S_SCLK")),
+        Subsignal("sdata_in",  *_io("AC97_SDI/I2S_RXD")),
+        Subsignal("sdata_out", *_io("AC97_SDO/I2S_TXD")),
+        Subsignal("sync",      *_io("AC97_SYNC/I2S_FS")),
+        Subsignal("reset_n",   *_io("AC97_RSTn/I2S_MCLK")),
+    ),
     ("sd_pwr_on", 0, *_io("SD_PWR_ON")),
 ]
 

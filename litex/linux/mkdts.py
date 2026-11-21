@@ -5,8 +5,9 @@
 #   python3 mkdts.py csr.json > linux.dts && dtc -O dtb -o linux.dtb linux.dts
 #
 # Run it with the Python of the LiteX installation. It runs litex_json2dts_linux, replaces the
-# bootargs (the generator gives a static ip= and an ext4 root), and adds the node of the two
-# seven-segment digits, which the generator does not know (adp-seven-seg.c).
+# bootargs (the generator gives a static ip= and an ext4 root), and adds the nodes that the
+# generator does not know: the two seven-segment digits (adp-seven-seg.c) and the AC97
+# controller (adp-ac97.c). The AC97 driver has fixed CSR offsets; this script checks them.
 
 import argparse
 import json
@@ -44,6 +45,37 @@ SEVEN_SEG = """
 """
 
 
+AC97 = """
+&{{/soc}} {{
+    ac97: ac97@{base:x} {{
+        compatible = "adp-xc7k160,ac97";
+        reg = <0x{base:x} 0x{size:x}>;
+        interrupts = <{irq}>;
+    }};
+}};
+"""
+
+# The CSR offsets that adp-ac97.c uses.
+AC97_OFFSETS = {
+    "ctrl": 0x00, "cmd": 0x04, "cmd_go": 0x08, "status": 0x0c, "reply": 0x10,
+    "play_base": 0x14, "play_length": 0x1c, "play_enable": 0x20, "play_loop": 0x28, "play_offset": 0x2c,
+    "rec_base": 0x34, "rec_length": 0x3c, "rec_enable": 0x40, "rec_loop": 0x48, "rec_offset": 0x4c,
+    "play_period": 0x54, "rec_period": 0x58,
+    "ev_status": 0x5c, "ev_pending": 0x60, "ev_enable": 0x64,
+}
+
+
+def ac97_node(csr):
+    base = csr["csr_bases"]["ac97"]
+    regs = csr["csr_registers"]
+    for name, offset in AC97_OFFSETS.items():
+        got = regs[f"ac97_{name}"]["addr"] - base
+        if got != offset:
+            sys.exit(f"ac97_{name} is at +0x{got:x}, and adp-ac97.c expects +0x{offset:x}")
+    end = max(r["addr"] + 4 * r["size"] for n, r in regs.items() if n.startswith("ac97_"))
+    return AC97.format(base=base, size=end - base, irq=csr["constants"]["ac97_interrupt"])
+
+
 def main():
     parser = argparse.ArgumentParser(description="DTS of the NaxRiscv SoC for a boot from the SD card.")
     parser.add_argument("csr_json")
@@ -60,7 +92,10 @@ def main():
         sys.exit("no single bootargs line in the output of litex_json2dts_linux")
 
     with open(args.csr_json) as f:
-        bases = json.load(f)["csr_bases"]
+        csr = json.load(f)
+    bases = csr["csr_bases"]
+    if "ac97" in bases:
+        dts += ac97_node(csr)
     if "seven_seg" in bases:
         dts += SEVEN_SEG.format(base=bases["seven_seg"], left=args.dp_left_trigger,
                                 right=args.dp_right_trigger)

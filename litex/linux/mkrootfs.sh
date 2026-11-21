@@ -4,10 +4,14 @@
 # the F flag.
 #
 #   docker run --rm --privileged -v /path/to/work:/work \
-#       -v /path/to/modules-install:/work/modules:ro debian:trixie sh /work/mkrootfs.sh
+#       -v /path/to/modules-install:/work/modules:ro \
+#       -v /path/to/ADP-XC7K160/litex/linux/rootfs:/work/overlay:ro debian:trixie sh /work/mkrootfs.sh
 #
-# Inputs in /work: key.pub (the SSH public key for root), and modules/lib/modules (from
-# "make modules_install INSTALL_MOD_PATH=..."). Outputs in /work:
+# Inputs in /work: key.pub (the SSH public key for root), modules/lib/modules (from
+# "make modules_install INSTALL_MOD_PATH=..."), and overlay (litex/linux/rootfs of this repository:
+# the login message and the unit of adp-7seg-temp). The overlay goes in with owner root and the
+# modes 755 or 644, because the host umask can remove the read bits. The script empties the
+# /etc/motd of Debian, so that the login message shows only the board. Outputs in /work:
 #   rootfs.ext4  Debian 13 riscv64 (systemd, sshd, networkd with DHCP, timesyncd), 2 GiB, label rootfs
 #   busybox      static riscv64 busybox, for the initramfs
 # Root has no password on the console; SSH accepts only the key.
@@ -29,6 +33,8 @@ mmdebstrap --arch=riscv64 --mode=root --variant=minbase \
   --customize-hook='chroot "$1" systemctl enable systemd-networkd systemd-resolved' \
   --customize-hook='mkdir -p "$1/boot/firmware" && printf "/dev/mmcblk0p2 / ext4 defaults,noatime 0 1\n/dev/mmcblk0p1 /boot/firmware vfat defaults 0 2\n" > "$1/etc/fstab"' \
   --customize-hook='cp -r /work/modules/lib/modules "$1/lib/" && chown -R 0:0 "$1/lib/modules" && find "$1/lib/modules" -type d -exec chmod 755 {} + && find "$1/lib/modules" -type f -exec chmod 644 {} +' \
+  --customize-hook='tar -C /work/overlay --owner=0 --group=0 --mode=u=rwX,go=rX -cf - . | tar -C "$1" --no-overwrite-dir -xpf -' \
+  --customize-hook=': > "$1/etc/motd"' \
   --customize-hook='printf "deb http://deb.debian.org/debian trixie main\ndeb http://deb.debian.org/debian trixie-updates main\ndeb http://security.debian.org/debian-security trixie-security main\n" > "$1/etc/apt/sources.list"' \
   trixie rootfs http://deb.debian.org/debian
 du -sh rootfs

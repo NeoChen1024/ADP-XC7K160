@@ -1,0 +1,90 @@
+#!/bin/sh
+# Login message of the ADP-XC7K160 with the LiteX NaxRiscv SoC (README section 15). pam_motd runs
+# it at each login. The board facts are fixed text. The SoC parts are read from sysfs, so a build
+# without a part does not show it. Only one external program (od) runs, to keep the login fast on
+# the 100 MHz CPU.
+
+dt=/sys/firmware/devicetree/base
+plat=/sys/bus/platform/devices
+
+# The first line of a file, or nothing.
+get() { v=; [ -r "$1" ] && read -r v < "$1"; }
+
+# Prints value/1000 with "digits" decimals.
+milli() {
+    if [ "$2" = 1 ]; then printf '%d.%d' $(($1 / 1000)) $(($1 % 1000 / 100))
+    else printf '%d.%02d' $(($1 / 1000)) $(($1 % 1000 / 10)); fi
+}
+
+# True if a platform device with this name suffix has a driver.
+bound() { for d in "$plat"/*."$1"; do [ -e "$d/driver" ] && return 0; done; return 1; }
+
+harts=0
+for c in /sys/devices/system/cpu/cpu[0-9]*; do [ -d "$c" ] && harts=$((harts + 1)); done
+isa=; mmu=
+while read -r k _ v; do
+    case $k in isa) [ -z "$isa" ] && isa=$v ;; mmu) [ -z "$mmu" ] && mmu=$v ;; esac
+done < /proc/cpuinfo
+hz=$(od -An -tu4 --endian=big "$dt/cpus/cpu@0/clock-frequency" 2>/dev/null)
+mhz=$(( ${hz:-0} / 1000000 ))
+
+cache=
+for i in /sys/devices/system/cpu/cpu0/cache/index*; do
+    get "$i/level"; l=$v; get "$i/type"; t=$v; get "$i/size"; s=$v
+    case $t in Instruction) t=I ;; Data) t=D ;; *) t= ;; esac
+    get "$i/shared_cpu_list"; case $v in *[-,]*) s="$s shared" ;; esac
+    cache="$cache${cache:+, }L$l$t $s"
+done
+
+while read -r k v _; do [ "$k" = MemTotal: ] && mem=$((v / 1024)) && break; done < /proc/meminfo
+swap=0
+while read -r _ _ s _; do case $s in [0-9]*) swap=$((swap + s / 1024)) ;; esac; done < /proc/swaps
+get /sys/module/zswap/parameters/enabled; zs=$v
+get /sys/module/zswap/parameters/compressor; zc=$v
+os=Debian
+while IFS='=' read -r k v; do [ "$k" = PRETTY_NAME ] && os=${v#\"} && os=${os%\"}; done < /etc/os-release
+
+echo
+echo "  Andes AndeShape ADP-XC7K160 -- LiteX SoC, $os"
+echo
+echo "  FPGA     Xilinx Kintex-7 XC7K160T-FBG676"
+echo "  CPU      $harts x NaxRiscv $isa, $mhz MHz, $mmu"
+[ -n "$cache" ] && echo "  Cache    $cache"
+echo "  DDR3     1 GiB, 32 bit, DDR3-$((mhz * 8)) (Linux: $mem MiB)"
+if [ "$swap" -gt 0 ]; then
+    z=; [ "$zs" = Y ] && z=", zswap $zc"
+    echo "  Swap     $swap MiB$z"
+fi
+echo
+
+if bound serial; then echo "  UART     LiteUART, the Linux console"; fi
+if bound mac; then
+    # liteeth does not read the link state of the PHY, so operstate stays "unknown".
+    get /sys/class/net/eth0/flags; st=down; [ $((${v:-0} & 1)) -eq 1 ] && st=up
+    echo "  eth0     LiteEth MII, 10/100 PHY DM9161, interface $st"
+fi
+if bound mmc; then
+    get /sys/block/mmcblk0/size; s=${v:-0}; get /sys/block/mmcblk0/device/name
+    if [ "$s" -gt 0 ]; then
+        echo "  mmc0     LiteSDCard, card $v $((s / 2097152)).$((s % 2097152 * 10 / 2097152)) GiB"
+    else
+        echo "  mmc0     LiteSDCard, no card"
+    fi
+fi
+if bound ac97; then
+    codec=
+    for f in /proc/asound/card[0-9]*/codec97#0/ac97#0-0; do get "$f" && codec=${v#*: }; done
+    echo "  Audio    AC97 with DMA, codec ${codec:-not found}"
+fi
+if bound seven-seg; then echo "  Display  two seven-segment digits (linedisp), decimal points as LEDs"; fi
+for h in /sys/class/hwmon/hwmon*; do
+    get "$h/name"; [ "$v" = litex_xadc ] || continue
+    line=
+    get "$h/temp1_input"; [ -n "$v" ] && line="FPGA $(milli "$v" 1) C"
+    for i in "$h"/in*_input; do
+        get "$i"; x=$v; get "${i%_input}_label"
+        line="$line, $v $(milli "$x" 2) V"
+    done
+    echo "  XADC     $line"
+done
+echo

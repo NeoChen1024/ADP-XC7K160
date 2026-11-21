@@ -1,0 +1,55 @@
+From: ADP-XC7K160 board notes
+Subject: [PATCH] net: liteeth: do not stall the TX queue
+
+liteeth_start_xmit() stops the queue when the reader is busy, and the TX
+interrupt wakes the queue only if it is stopped. If the interrupt of the last
+frame comes between the read of LITEETH_READER_READY and netif_stop_queue(),
+nothing wakes the queue again: the interface receives, and never transmits.
+On a dual-core NaxRiscv SoC this occurred after about 30 minutes of apt.
+
+Read the state again after the stop, as other drivers do, and add a TX timeout
+handler that wakes the queue. The busy case is normal flow control, so it no
+longer prints an error.
+
+--- a/drivers/net/ethernet/litex/litex_liteeth.c
++++ b/drivers/net/ethernet/litex/litex_liteeth.c
+@@ -158,12 +158,16 @@
+ 	void __iomem *txbuffer;
+ 
+ 	if (!litex_read8(priv->base + LITEETH_READER_READY)) {
+-		if (net_ratelimit())
+-			netdev_err(netdev, "LITEETH_READER_READY not ready\n");
+-
+ 		netif_stop_queue(netdev);
+-
+-		return NETDEV_TX_BUSY;
++		/*
++		 * The interrupt of a sent frame wakes only a stopped queue. If it came
++		 * between the read above and the stop, nothing wakes the queue, and the
++		 * transmission stops for good. Thus read the state again after the stop.
++		 */
++		smp_mb();
++		if (!litex_read8(priv->base + LITEETH_READER_READY))
++			return NETDEV_TX_BUSY;
++		netif_start_queue(netdev);
+ 	}
+ 
+ 	/* Reject oversize packets */
+@@ -199,7 +203,17 @@
+ 	dev_fetch_sw_netstats(stats, netdev->tstats);
+ }
+ 
++static void liteeth_tx_timeout(struct net_device *netdev, unsigned int txqueue)
++{
++	struct liteeth *priv = netdev_priv(netdev);
++
++	netdev_warn(netdev, "transmit timeout, reader ready %u\n",
++		    litex_read8(priv->base + LITEETH_READER_READY));
++	netif_wake_queue(netdev);
++}
++
+ static const struct net_device_ops liteeth_netdev_ops = {
++	.ndo_tx_timeout		= liteeth_tx_timeout,
+ 	.ndo_open		= liteeth_open,
+ 	.ndo_stop		= liteeth_stop,
+ 	.ndo_get_stats64	= liteeth_get_stats64,

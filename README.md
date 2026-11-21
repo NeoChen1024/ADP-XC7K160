@@ -266,7 +266,7 @@ The contents of U4 (factory state; read completely on 2026-11-20, two reads agre
 The DVD that came with the board (AndeSight and the BSP) does not contain these images. The backup
 of the owner is the only copy.
 
-Two writes on 2026-11-21 **[measured]** changed the start of this table:
+Three writes on 2026-11-21 **[measured]** changed the start of this table:
 
 - The first write put the LiteX SoC of section 15 (two NaxRiscv cores, 512 KiB L2), without the
   XADC. Its bitstream has 4,134,256 bytes, at `0x0000000–0x03F14E3`. Vivado erased
@@ -274,10 +274,12 @@ Two writes on 2026-11-21 **[measured]** changed the start of this table:
   outside the repository, made this write.
 - The second write, with `jtag/flash_u4.sh`, put the same SoC with the XADC. Its bitstream has
   4,980,172 bytes, at `0x0000000–0x04BFD3F`. Vivado erased `0x0000000–0x04BFFFF`, 38 blocks.
-  **U4 now holds this SoC.**
-- The end of the factory bitstream, `0x04C0000–0x0680000`, is still in U4. Alone it is not a
-  bitstream.
-- Neither write addressed the upper half. That half was not read again after the writes.
+- The third write, with `jtag/flash_u4.sh`, put the SoC with the XADC, the AC97 controller and 8
+  RX slots (section 15). Its bitstream has 4,643,412 bytes, at `0x0000000–0x046D9C7`. The file
+  covers `0x0000000–0x047FFFF`, 36 blocks. **U4 now holds this SoC.**
+- `0x0480000–0x04BFFFF` still holds the end of the second bitstream. The end of the factory
+  bitstream, `0x04C0000–0x0680000`, is also still in U4. Alone, neither is a bitstream.
+- No write addressed the upper half. That half was not read again after the writes.
 
 To read U4 through JTAG, use `flash-probes/`:
 
@@ -306,10 +308,10 @@ VIVADO=... XVCD=... sh jtag/flash_u4.sh --owner-asked design.bit
 - If the write fails, the FPGA does not configure at power-on. JTAG still works, so `load.sh` and a
   new write still work.
 
-Result **[measured, 2026-11-21]**: in both writes, the erase, the write and the verify passed.
-Through xvc-pico, the complete runs took 109 and 130 seconds. After PROGRAM_B, DONE was 1. Each
-SoC then booted Debian from the SD card with 2 CPUs and the 512 KiB L2. After the second write,
-`sensors` showed the values of the XADC. Later the same day, the FPGA loaded the SoC from U4
+Result **[measured, 2026-11-21]**: in all three writes, the erase, the write and the verify
+passed. Through xvc-pico, the complete runs took 109, 130 and 124 seconds. After PROGRAM_B, DONE
+was 1. Each SoC then booted Debian from the SD card with 2 CPUs and the 512 KiB L2. After the second
+write, `sensors` showed the values of the XADC. After the third write, the AC97 card was present. Later the same day, the FPGA loaded the SoC from U4
 after a power cycle.
 
 To restore the factory design, convert the first `0x680000` bytes of the backup to the byte order of
@@ -751,6 +753,7 @@ while `PHY_PWRDWN` (Y20) is low.
   the codec goes into a test mode.
 - `workbench.py tone` sends 1 kHz to the left output and 500 Hz to the right output. The sound was
   heard (2026-11-20).
+- Section 15 has a LiteX controller with DMA and a Linux driver for this codec.
 
 ### SD card
 
@@ -879,6 +882,10 @@ Other items:
   of all 1 GiB and at least two runs of 54 GiB of BIST. Long use and other temperatures were not
   tested.
 - The data lines of the LCD, IDE/CF, AICE, trace and PCIe were not used.
+- AC97 in Linux (section 15): only playback and the capture of `Mix` were tested, at 48 kHz. The
+  line input and the microphone input were not tested.
+- Ethernet in Linux (section 15): the patch of `liteeth` ran for less than one hour. With traffic
+  in both directions, the MAC dropped some frames with 8 RX slots.
 
 Items that the workbench confirmed on 2026-11-20:
 
@@ -984,11 +991,12 @@ not in this repository. Install it into a separate directory with its `litex_set
 | File | Contents |
 |---|---|
 | `adp_xc7k160_platform.py` | The LiteX platform. It reads the pins and the I/O standards from `pins.csv`, by the signal names of the manual |
-| `adp_xc7k160_target.py` | The SoC: a VexRiscv CPU, the BIOS, the UART, the 1 GiB DDR3 as main RAM, the buttons and the displays. As options: the LiteDRAM BIST, Etherbone on the 10/100 Ethernet, and the SD card (read only) |
+| `adp_xc7k160_target.py` | The SoC: a VexRiscv CPU, the BIOS, the UART, the 1 GiB DDR3 as main RAM, the buttons and the displays. As options: the LiteDRAM BIST, Etherbone or the MAC on the 10/100 Ethernet, the SD card, and the AC97 controller with DMA |
 | `versions.sh` | Lists the URL and the commit of each repository of a LiteX installation |
 | `versions.txt` | The output of `versions.sh` for the installation that built the SoC below |
 | `tftpd.py` | A TFTP server that only reads, for the network boot of the BIOS |
-| `linux/` | The files for Linux and Debian on NaxRiscv: the rootfs script, the SD image script, the initramfs, two `boot.json`, the kernel config fragment, the DTS script, and the drivers and tools for the XADC and the displays |
+| `adp_ac97.py` | The AC97 controller: the AC-link, the codec commands, and two DMA engines for playback and capture |
+| `linux/` | The files for Linux and Debian on NaxRiscv: the rootfs script and its overlay `rootfs/`, the SD image script, the initramfs, two `boot.json`, the kernel config fragment, the DTS script, a patch of the `liteeth` driver, and the drivers and tools for the XADC, the displays and the AC97 controller |
 
 To install LiteX and build the SoC:
 
@@ -1196,6 +1204,8 @@ python3 $A/litex/adp_xc7k160_target.py --build \
     --with-sdcard-write --soc-json csr.json
 ```
 
+The SoC in U4 since 2026-11-21 also has `--with-ac97` (see "AC97 audio in Linux" below).
+
 - `--with-ethernet` adds the LiteEth MAC, which the `liteeth` driver of Linux uses. The BIOS uses it
   for a TFTP boot from the remote address. `--tftp-port` moves that server away from port 69.
 - `--with-sdcard-write` gives Linux a writable card. Use it only with a card for writing (AGENTS.md).
@@ -1239,9 +1249,14 @@ The software, all outside this repository:
   `--initrd disabled --root-device mmcblk0p2`. Then replace the bootargs with
   `console=liteuart earlycon=liteuart,0xf0001000 rootwait root=/dev/mmcblk0p2 rw`. The generator
   puts a static `ip=` into the bootargs, and systemd-networkd uses DHCP instead. Since the F2FS card,
-  `litex/linux/mkdts.py csr.json` does these steps, and adds the node of the seven-segment digits.
+  `litex/linux/mkdts.py csr.json` does these steps. It also adds the nodes of the seven-segment digits
+  and of the AC97 controller.
 - Debian 13: `litex/linux/mkrootfs.sh` in a container. `litex/linux/mkdisk.sh` makes the image of
   the card.
+- `mkrootfs.sh` copies `litex/linux/rootfs/` into the root file system, with owner root and the
+  modes 755 or 644. It contains `etc/update-motd.d/20-adp-xc7k160`, the login message. The message
+  gives the board, the CPU, the caches, the DDR3 and the swap. Then it lists the SoC parts that
+  have a driver, and the XADC values. The script reads sysfs and starts only one program (`od`).
 
 The places in the DDR3 (`boot-sd.json` and `boot-net.json` give them to the BIOS):
 
@@ -1419,6 +1434,82 @@ Problems that were found **[measured, 2026-11-21]**:
 - After the BIOS command `reboot`, the host read the banner as wrong characters. The text after a
   pause was correct. A probable cause: the reset stopped a character in the middle, and the UART
   of the host then took a data bit as a start bit. A JTAG load gives a correct banner.
+
+### AC97 audio in Linux
+
+`--with-ac97` adds `litex/adp_ac97.py`, a controller for the ALC203 codec (section 11):
+
+- The codec drives `AC97_BCLK` at 12.288 MHz. K26 is not a clock-capable pin. Thus the clock goes
+  from the IBUF to a BUFG on general routing (`CLOCK_DEDICATED_ROUTE FALSE`).
+- The controller sends `AC97_SYNC` and `AC97_SDO` on the rising edge. It samples `AC97_SDI` on the
+  falling edge, in a flip-flop with an inverted clock.
+- It uses slots 0 to 4 at 48 kHz: the tag, the codec command, and the left and right samples. It
+  does not use VRA.
+- Two DMA engines of LiteX read and write ring buffers in the main RAM, through the coherent DMA bus
+  of NaxRiscv. One 32-bit word is one stereo frame of S16_LE.
+- Each engine gives an interrupt after each period.
+- After configuration, `ctrl.reset` is 1. Then `AC97_RSTn`, `AC97_SYNC` and `AC97_SDO` are low,
+  which agrees with the reset condition of section 11.
+
+The Linux side:
+
+- `litex/linux/adp-ac97.c` (GPL-2.0 or MIT) is an ALSA driver with one PCM device: playback and
+  capture, 48 kHz, S16_LE, two channels. `snd-ac97-codec` gives the mixer of the codec.
+- The same `Kbuild` builds it. `adp.config` sets `SND_SOC_AC97_CODEC=m`, which selects
+  `SND_AC97_CODEC`.
+- `mkdts.py` adds the node, with the compatible `adp-xc7k160,ac97`. The driver uses fixed CSR
+  offsets. `mkdts.py` compares them with `csr.json` and stops if they differ.
+- The AC97 CSRs are first in the CSR map. Thus the MAC, the SD card, the digits and the XADC moved
+  to other addresses. A DTB works only with the SoC that it was made from.
+
+The build of 2026-11-21: two cores, 512 KiB L2, -2 at 100 MHz, the XADC, the MAC with 8 RX slots
+and 4 TX slots, and the AC97 controller. The setup slack was +0.751 ns, with 62,166 LUT, 43,058 FF
+and 208.5 block RAM tiles. The slack of the clock `ac97_bit_clk` was +1.606 ns.
+
+Results **[measured, 2026-11-21]**, after a JTAG load of that build:
+
+- The modules loaded at boot. `/proc/asound/cards` showed `ADP-XC7K160 AC97 (ALC203)`.
+- A loop test through the codec played 6 s of a tone: 1 kHz on the left, 1.5 kHz on the right.
+  `arecord` recorded `Mix` at the same time, with the `Capture` gain at 0 dB.
+- `aplay` took 6.14 s, and the recording had 6.000 s of signal.
+- The peak frequency was 1000.00 Hz on the left and 1500.00 Hz on the right.
+- A sine fit on each block of 10 ms (579 blocks on each side) left 5 LSB or less. Thus no sample was
+  lost or repeated.
+- The same test during two SSH transfers of 32 MiB, one in each direction, gave the same result.
+- The owner heard the tone in headphones.
+
+### Ethernet in Linux
+
+On 2026-11-21, after about 30 minutes of `apt`, eth0 of the SoC received frames and sent none.
+The kernel log showed `LITEETH_READER_READY not ready`, and the TX count stayed at 17,274 packets.
+A probable cause, from the source of the `liteeth` driver of Linux 6.18.64:
+
+- `liteeth_start_xmit()` stops the queue when the MAC is busy.
+- The TX interrupt wakes the queue only if the queue is stopped.
+- If the interrupt of the last frame comes between the check and the stop, nothing wakes the queue.
+
+`litex/linux/patches/0001-net-liteeth-do-not-stall-the-tx-queue.patch` reads the state again after
+the stop. It also adds a TX timeout handler that wakes the queue. Apply it to the kernel source with
+`patch -p1`. The SoC also has 8 RX slots and 4 TX slots of 2 KiB; the default is 2 and 2.
+
+The `dropped` count of `ip -s link` is not a count of lost frames:
+
+- The driver counts each of its own drops also in `rx_errors`.
+- LiteEth has no address filter. The network stack discards the frames of other stations, and
+  counts them in `dropped`.
+- The MAC counts the frames that it drops for lack of a free slot in the CSR
+  `ethmac_sram_writer_errors`. Linux does not read it. It counts from the configuration, also
+  before Linux opens eth0.
+
+Results **[measured, 2026-11-21]**, with the patch and 8 RX slots:
+
+- In 60 s without load, eth0 received 1286 frames. `ethmac_sram_writer_errors` did not change.
+- SSH (`aes128-ctr`) sent 64 MiB from the host to the board in 56 s, and from the board to the
+  host in 51 s. The CPU limits this speed.
+- During each transfer, `ethmac_sram_writer_errors` did not change. `tx_dropped` and `rx_errors`
+  stayed 0, and the kernel log had no message of `liteeth`.
+- During transfers in both directions at the same time, with the AC97 test, the MAC dropped 13
+  frames. The transfers completed.
 
 ## License
 

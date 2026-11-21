@@ -21,6 +21,9 @@
 # if no other boot medium works; --tftp-port moves its server from port 69, so that a user can run
 # it. --with-etherbone and --with-ethernet exclude each other.
 #
+# --with-ac97 adds the AC97 controller of adp_ac97.py: playback and capture at 48 kHz through two DMA
+# engines, and the codec registers. The Linux driver is litex/linux/adp-ac97.c.
+#
 # --with-sdcard adds LiteSDCard on the 4-bit bus, for reading only: the SoC has no path that
 # writes the card. --with-sdcard-write also adds the write path. Use it only with a card that the
 # owner gave for writing (AGENTS.md).
@@ -53,6 +56,7 @@ from litex.soc.cores.gpio import GPIOIn, GPIOOut
 from litex.soc.cores.xadc import S7SystemMonitor
 from litex.soc.integration.builder import Builder
 from litex.soc.integration.soc_core import SoCCore
+from litex.soc.interconnect import wishbone
 
 from litedram.modules import MT41J256M16
 from litedram.phy import s7ddrphy
@@ -86,7 +90,7 @@ class _CRG(LiteXModule):
 class BaseSoC(SoCCore):
     def __init__(self, sys_clk_freq=175e6, speedgrade=-2, with_bist=False,
         with_etherbone=False, with_ethernet=False, eth_ip=None, remote_ip=None, tftp_port=69,
-        with_sdcard=False, with_sdcard_write=False, **kwargs):
+        with_sdcard=False, with_sdcard_write=False, with_ac97=False, **kwargs):
         platform = adp_xc7k160_platform.Platform(speedgrade=speedgrade)
 
         with_dram = not kwargs.get("integrated_main_ram_size")
@@ -138,12 +142,35 @@ class BaseSoC(SoCCore):
             self.add_etherbone(phy=self.ethphy, ip_address=eth_ip, mac_address=0x02adb0000001,
                 buffer_depth=255)
         if with_ethernet:
+            # More slots than the default of 2 give Linux at 100 MHz more time to empty them
+            # (README section 15, "Ethernet in Linux").
             self.add_ethernet(phy=self.ethphy, local_ip=eth_ip, remote_ip=remote_ip,
-                mac_address=0x02adb0000001)
+                mac_address=0x02adb0000001, nrxslots=8, ntxslots=4)
             self.add_constant("TFTP_SERVER_PORT", tftp_port)
 
         if with_sdcard or with_sdcard_write:
             self.add_sdcard(mode="read+write" if with_sdcard_write else "read")
+
+        if with_ac97:
+            from adp_ac97 import AC97
+            def dma_master(mode):
+                return wishbone.Interface(
+                    data_width = self.bus.data_width,
+                    adr_width  = self.bus.get_address_width(standard="wishbone", addressing="word"),
+                    addressing = "word",
+                    mode       = mode,
+                )
+            bus_play, bus_rec = dma_master("r"), dma_master("w")
+            pads = platform.request("ac97")
+            self.ac97 = AC97(pads, bus_play, bus_rec)
+            dma_bus = getattr(self, "dma_bus", self.bus)
+            dma_bus.add_master(name="ac97_play", master=bus_play)
+            dma_bus.add_master(name="ac97_rec",  master=bus_rec)
+            self.irq.add("ac97", use_loc_if_exists=True)
+            platform.add_period_constraint(pads.bit_clk, 1e9/12.288e6)
+            platform.add_false_path_constraints(self.crg.cd_sys.clk, self.ac97.cd_ac97.clk)
+            # K26 is not clock capable: the clock goes from the IBUF to the BUFG on general routing.
+            platform.add_platform_command("set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets ac97_bit_clk_IBUF]")
 
         # LiteDRAM, unlike MIG (section 8), does not use the only XADC of the device.
         self.xadc = S7SystemMonitor()
@@ -182,6 +209,7 @@ def main():
     parser.add_target_argument("--tftp-port",    default=69, type=int, help="UDP port of the TFTP server of the BIOS.")
     parser.add_target_argument("--with-sdcard",  action="store_true", help="Add LiteSDCard, read only.")
     parser.add_target_argument("--with-sdcard-write", action="store_true", help="Add LiteSDCard with its write path.")
+    parser.add_target_argument("--with-ac97",    action="store_true", help="Add the AC97 controller with DMA.")
     args = parser.parse_args()
     if (args.with_etherbone or args.with_ethernet) and not args.eth_ip:
         parser.error("Ethernet needs --eth-ip: an address that no station answers on the LAN")
@@ -193,6 +221,7 @@ def main():
     soc = BaseSoC(sys_clk_freq=args.sys_clk_freq, speedgrade=args.speedgrade, with_bist=args.with_bist,
         with_etherbone=args.with_etherbone, with_ethernet=args.with_ethernet, eth_ip=args.eth_ip,
         remote_ip=args.remote_ip, tftp_port=args.tftp_port, with_sdcard=args.with_sdcard, with_sdcard_write=args.with_sdcard_write,
+        with_ac97=args.with_ac97,
         **parser.soc_argdict)
     builder = Builder(soc, **parser.builder_argdict)
     if _inside(builder.output_dir, adp_xc7k160_platform._REPOSITORY):
