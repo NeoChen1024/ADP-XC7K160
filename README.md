@@ -1151,7 +1151,7 @@ Verilog of the core. The SoC was built with these options:
 export JAVA_HOME=/path/to/java-17-openjdk PATH=/path/to/sbt/bin:$PATH
 python3 $A/litex/adp_xc7k160_target.py --build \
     --cpu-type naxriscv --xlen 64 --with-fpu --with-rvc --with-coherent-dma --cpu-count 2 \
-    --integrated-sram-size 0x4000 --sys-clk-freq 100e6 \
+    --l2-bytes 524288 --l2-ways 8 --integrated-sram-size 0x4000 --sys-clk-freq 100e6 \
     --with-ethernet --eth-ip A.B.C.D --remote-ip E.F.G.H --tftp-port 6069 \
     --with-sdcard-write --soc-json csr.json
 ```
@@ -1160,13 +1160,18 @@ python3 $A/litex/adp_xc7k160_target.py --build \
   for a TFTP boot from the remote address. `--tftp-port` moves that server away from port 69.
 - `--with-sdcard-write` gives Linux a writable card. Use it only with a card for writing (AGENTS.md).
 - The 8 KiB default SRAM left less than 2 KiB for the stack of the BIOS. Thus the SRAM is 16 KiB.
+- The cores share one coherent L2 cache in front of LiteDRAM (`NaxSoc.scala` of NaxRiscv). The
+  default is 128 KiB. Each core has 16 KiB of L1 instruction cache and 16 KiB of L1 data cache.
 
 The builds of 2026-11-21, as -2 at 100 MHz (Vivado 2025.2.1):
 
-| Cores | Setup slack | LUT | FF | Block RAM tiles | LUT of NaxRiscv alone |
+| Cores, L2 | Setup slack | LUT | FF | Block RAM tiles | LUT of NaxRiscv alone |
 |---|---|---|---|---|---|
-| 1 | +1.100 ns | 34,916 | 25,965 | 91.5 | 29,067 |
-| 2 | +1.204 ns | 60,719 | 41,991 | 103.5 | 50,458 |
+| 1, 128 KiB | +1.100 ns | 34,916 | 25,965 | 91.5 | 29,067 |
+| 2, 128 KiB | +1.204 ns | 60,719 | 41,991 | 103.5 | 50,458 |
+| 2, 512 KiB | +0.932 ns | 60,951 | 42,090 | 203.5 | 50,690 |
+
+An L2 of 1 MiB needs about 256 more RAMB36 for its data alone, and the device has 325.
 
 The estimate of `report_power` for these builds is below. It is vectorless, Vivado gives it the
 confidence "Low", and it assumes 25 °C ambient air with a heat sink. It does not include the DDR3
@@ -1179,6 +1184,8 @@ devices, the PHY or the regulators.
 | Vcco 1.5 V (DDR3 banks) | 0.242 A | 0.237 A |
 | Vcco 3.3 V | 0.002 A | 0.002 A |
 | Total on the chip | 1.624 W | 1.895 W |
+
+Both builds have the 128 KiB L2. With the 512 KiB L2, the estimate for 2 cores is 1.963 W.
 
 The software, all outside this repository:
 
@@ -1239,6 +1246,24 @@ Results **[measured, 2026-11-21]**, with the 32 GB card of section 11:
   `systemd-analyze` gave 16.3 s + 97.7 s. The first boot had more work (for example the machine
   ID), so the two boot times do not compare the cores.
 - Two cores: `head -c 32M /dev/zero | sha256sum` took 13.6 s. Two of them in parallel took 14.8 s.
+
+The size of the L2 **[measured, 2026-11-21]**: two cores at 100 MHz, with the same Debian and
+the same script. The script ran `sysbench memory` (reads, one thread, 512 MiB in total) and
+`7z b 1 -md22` (a dictionary of 4 MiB).
+
+| Test | L2 128 KiB | L2 512 KiB |
+|---|---|---|
+| sysbench, block of 32 KiB | 253.7 MiB/s | 255.4 MiB/s |
+| sysbench, block of 256 KiB | 190.2 MiB/s | 276.2 MiB/s |
+| sysbench, block of 1 MiB | 193.3 MiB/s | 194.8 MiB/s |
+| sysbench, block of 8 MiB | 196.1 MiB/s | 196.4 MiB/s |
+| 7z, 1 thread: compression, decompression, total rating | 84 KB/s, 960 KB/s, 82 MIPS | 91 KB/s, 980 KB/s, 86 MIPS |
+| 7z, 2 threads: compression, decompression, total rating | 122 KB/s, 1844 KB/s, 138 MIPS | 122 KB/s, 1909 KB/s, 141 MIPS |
+
+- A block of 256 KiB fits in the larger L2 only, and its read speed increased by 45%.
+- Blocks of 1 MiB and more come from the DDR3 with both sizes, at about 195 MiB/s.
+- The 7z rating increased by 5% for one thread and by 2% for two threads.
+- With the 512 KiB L2, the third boot took 16.0 s + 85.0 s.
 
 Problems that were found **[measured, 2026-11-21]**:
 
