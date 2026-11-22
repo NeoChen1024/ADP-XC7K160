@@ -5,8 +5,8 @@
 #   python3 adp_xc7k160_target.py --build [--load] [--sys-clk-freq 175e6] [--output-dir DIR] ...
 #
 # The DDR3 is main RAM (LiteDRAM, K7DDRPHY at 1:4), so its data rate is 8 times the system clock:
-# DDR3-1400 at the default 175 MHz, DDR3-800 at 100 MHz. The 4x clock goes through a BUFG, so
-# 710 MHz (-2) limits the rate to DDR3-1420 (litex/README.md).
+# DDR3-1400 at the default 175 MHz, DDR3-880 at 110 MHz, DDR3-800 at 100 MHz. The 4x clock goes
+# through a BUFG, so 710 MHz (-2) limits the rate to DDR3-1420 (litex/README.md).
 #
 # With --integrated-main-ram-size the SoC has no DDR3 controller. With --with-bist the SoC also has
 # the LiteDRAM BIST on the native port (BIOS: sdram_bist, sdram_hw_test).
@@ -52,7 +52,7 @@ import sys
 
 sys.dont_write_bytecode = True
 
-from migen import Cat, ClockDomain, Signal
+from migen import Cat, ClockDomain, Instance, Signal
 
 from litex.gen import LiteXModule
 from litex.soc.cores.clock import S7IDELAYCTRL, S7MMCM
@@ -78,9 +78,12 @@ class _CRG(LiteXModule):
         # HW_RST_SW1 resets the SoC. It does not reconfigure the FPGA
         # (docs/buttons-displays-resets.md).
         # SYSCLK is the clock that the board gives to the DDR3 (docs/clocks.md).
+        clk200_pads = platform.request("clk200")
+        clk200      = Signal()
+        self.specials += Instance("IBUFDS", i_I=clk200_pads.p, i_IB=clk200_pads.n, o_O=clk200)
         self.mmcm = mmcm = S7MMCM(speedgrade=platform.speedgrade)
         self.comb += mmcm.reset.eq(~platform.request("sys_rst_n") | self.rst)
-        mmcm.register_clkin(platform.request("clk200"), 200e6)
+        mmcm.register_clkin(clk200, 200e6)
         mmcm.create_clkout(self.cd_sys, sys_clk_freq)
         platform.add_false_path_constraints(self.cd_sys.clk, mmcm.clkin)
 
@@ -88,7 +91,9 @@ class _CRG(LiteXModule):
             self.cd_sys4x  = ClockDomain()
             self.cd_idelay = ClockDomain()
             mmcm.create_clkout(self.cd_sys4x,  4*sys_clk_freq)
-            mmcm.create_clkout(self.cd_idelay, 200e6)
+            # The IDELAYCTRL reference is SYSCLK itself. Thus the MMCM needs no 200 MHz output,
+            # and the system clock can be a frequency that does not divide the VCO into 200 MHz.
+            self.specials += Instance("BUFG", i_I=clk200, o_O=self.cd_idelay.clk)
             self.idelayctrl = S7IDELAYCTRL(self.cd_idelay)
 
 
@@ -201,6 +206,9 @@ class BaseSoC(SoCCore):
                     if f"{cache}-{key}" in nax_args:
                         self.add_config(f"CPU_{cache.upper()}_{config}", int(nax_args[f"{cache}-{key}"]),
                             check_duplicate=False)
+            dma_width = int(nax_args.get("dcache-mem-bits", 64))
+            if hasattr(self, "dma_bus") and dma_width != self.cpu.dma_bus.data_width:
+                self._widen_nax_dma(dma_width)
 
         # LiteDRAM, unlike MIG (docs/ddr3.md), does not use the only XADC of the device.
         self.xadc = S7SystemMonitor()
@@ -210,6 +218,25 @@ class BaseSoC(SoCCore):
         for n in range(2):
             pads = platform.request("seven_seg", n)
             self.comb += Cat(pads.segments, pads.dp).eq(~segments[8*n:8*n + 8])
+
+    def _widen_nax_dma(self, width):
+        # NaxSoc makes its DMA port as wide as the D-cache refill bus (naxriscv_l1.scala), but the
+        # LiteX CPU wrapper connects 64 bits. The DMA masters stay on the DMA bus of 64 bits. One
+        # up-converter after its arbiter feeds the port. The arbiter changes master only after
+        # all responses came back, so the order that the converter needs is kept.
+        from litex.soc.interconnect import axi
+        narrow = self.cpu.dma_bus
+        wide   = axi.AXIInterface(data_width=width, address_width=narrow.address_width,
+            id_width=narrow.id_width)
+        swap = {}
+        for ch in ("aw", "w", "b", "ar", "r"):
+            for n, w in zip(getattr(narrow, ch).flatten(), getattr(wide, ch).flatten()):
+                swap[id(n)] = w
+        ports = [k for k, v in self.cpu.cpu_params.items() if id(v) in swap]
+        assert ports and sorted(ports) == sorted(k for k in self.cpu.cpu_params if "dma_bus" in k)
+        for k in ports:
+            self.cpu.cpu_params[k] = swap[id(self.cpu.cpu_params[k])]
+        self.nax_dma_converter = axi.AXIUpConverter(narrow, wide)
 
 
 def _inside(path, directory):

@@ -9,7 +9,7 @@
 # generator does not know: the two seven-segment digits (adp-seven-seg.c), the AC97 controller
 # (adp-ac97.c), the Ethernet MAC with DMA (adp-ethmac.c), and the PMU events of NaxRiscv. The two
 # drivers have fixed CSR offsets; this script checks them. It also lets the SD card run in high
-# speed mode (50 MHz).
+# speed mode (at most 50 MHz).
 
 import argparse
 import json
@@ -23,7 +23,8 @@ BOOTARGS = ("console=liteuart earlycon=liteuart,0xf0001000 rootwait root=/dev/mm
             "rootfstype=f2fs rootflags=lazytime,compress_algorithm=lz4,compress_extension=*,"
             "compress_chksum,atgc,gc_merge rw")
 
-# High speed mode: Linux switches the card to it, and the clock goes from 25 MHz to 50 MHz.
+# High speed mode: Linux switches the card to it, and asks for 50 MHz in place of 25 MHz. The
+# divider of LiteSDCard gives the system clock divided by an even number, not more than that.
 # litex/linux/README.md gives the test of 2026-11-22.
 SD_HIGH_SPEED = """
 &mmc0 {

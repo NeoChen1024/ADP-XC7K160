@@ -236,7 +236,8 @@ read it.
 Results **[measured, 2026-11-22]**. The host ran `iperf3 -s` on the LAN. The board ran
 `taskset -c 1 iperf3 -c HOST -t 10`, with `-R` for the direction into the board. Out is from the
 board. The TCP values are the receiver side of iperf3, in Mbit/s. The maximum of TCP with an MTU
-of 1500 is about 94.
+of 1500 is about 94. The SoCs ran at 100 MHz with refill buses of 64 bits, except on the last row:
+the reference SoC at 110 MHz, with `-t 15`.
 
 | MAC and driver | TCP out | TCP in | UDP out (`-u -b 100M`) |
 |---|---|---|---|
@@ -245,6 +246,7 @@ of 1500 is about 94.
 | The same, with `0004` and `0005` | 76.2 | 93.6 | not measured |
 | LiteEth, 16 RX and 8 TX slots, `0001`, `0004`, `0005` | 77.7 | 93.7 | 76.2 |
 | The MAC with DMA, `adp-ethmac.c` | 89.5 | 93.8 | 93.4 |
+| The same, the reference SoC | 93.7 | 93.8 | 95.6 |
 
 - With LiteEth, CPU 0 was busy all the time in both directions. A program at the lowest priority
   got 1% of CPU 0. The copy took about one third of CPU 0, and the TCP stack the rest.
@@ -254,6 +256,8 @@ of 1500 is about 94.
   buffer in 2 of 1000 samples: the poll was late while CPU 0 was busy.
 - 32 MiB of random data went through SSH in each direction with the same MD5. Ping with 0 to 1472
   bytes of data worked. The kernel showed no checksum fault.
+- On the reference SoC, 64 MiB of random data went to the board and back through SSH with the same
+  MD5.
 - An `ip link set eth0 down` and `up` with the MAC with DMA kept the receive buffers, and TCP worked
   after it.
 
@@ -272,8 +276,9 @@ A request of several segments goes through the bounce buffer of the driver. The 
 gets a timeout of 1 s, because 128 KiB needs 11 ms at 25 MHz.
 
 `mkdts.py` gives `cap-sd-highspeed` to the SD card node. Linux then switches the card to high speed
-mode, and the clock goes from 25 MHz to 50 MHz. The divider of LiteSDCard makes 50 MHz from the
-system clock of 100 MHz.
+mode, and asks for 50 MHz in place of 25 MHz. The divider of LiteSDCard divides the system clock
+by an even number only, and the driver takes the nearest clock that is not faster. Thus a system
+clock of 100 MHz gives 50 MHz, and the 110 MHz of the reference SoC gives 27.5 MHz.
 
 The first test at 50 MHz had protection, because a refused write makes the later writes of this
 card one write late ([../../docs/sd-card.md](../../docs/sd-card.md)):
@@ -289,24 +294,27 @@ Other limits of the SD card in Linux:
 
 - LiteSDCard gives its interrupt at the end of the command response, and not at the end of the
   data. The driver polls for the end of the data, with sleeps of 2 to 5 µs.
-- The DMA of LiteSDCard is a 32-bit Wishbone master. LiteX connects it to the coherent DMA bus of
-  NaxRiscv, with one beat for each transfer ([../README.md](../README.md)). If the DMA is slow,
+- The DMA of LiteSDCard is a 32-bit Wishbone master. LiteX connects it to the DMA bus of 64 bits,
+  with one beat for each transfer ([../README.md](../README.md)). If the DMA is slow,
   LiteSDCard stops the SD clock.
 
 Results **[measured, 2026-11-22]**, with the card in the socket (CID name `SH32G`). `dd` read and
 wrote 32 MiB of partition 3, with the swap off. The reads used `iflag=direct`, and the writes used
 `oflag=direct conv=fsync`. The data read back was the same as the data written. The columns give
-the `dd` block size, and the values are in MB/s.
+the `dd` block size, and the values are in MB/s. The SoC of the first three rows ran at 100 MHz,
+and the last row is the reference SoC at 110 MHz.
 
 | Clock, request size | Read 4 KiB | Read 64 KiB | Read 1 MiB | Write 4 KiB | Write 64 KiB | Write 1 MiB |
 |---|---|---|---|---|---|---|
 | 25 MHz, 4 KiB | 2.9 | 3.0 | 3.3 | 1.5 | 1.5 | 1.6 |
 | 25 MHz, 128 KiB | 2.8 | 8.8 | 8.6 | 1.6 | 7.7 | 8.5 |
 | 50 MHz (high speed), 128 KiB | 3.6 | 13.8 | 15.3 | 1.8 | 12.8 | 13.0 |
+| 27.5 MHz (high speed), 128 KiB | 3.3 | 10.1 | 10.9 | 1.6 | 8.8 | 9.6 |
 
 - With blocks of 1 MiB, the CPU time for the read of 32 MiB was 5.9 s, 2.5 s and 1.0 s. For the
   write it was 9.5 s, 2.2 s and 1.3 s.
-- The bus limit with 4 data lines is 12.5 MB/s at 25 MHz and 25 MB/s at 50 MHz.
+- The bus limit with 4 data lines is 12.5 MB/s at 25 MHz, 13.75 MB/s at 27.5 MHz and 25 MB/s at
+  50 MHz.
 - A trace of 128 reads of 128 KiB gave the time in the driver and the time between two requests.
   At 50 MHz they were 7.35 ms and 0.87 ms; the data needs about 5.3 ms of the bus. In high speed
   mode at 25 MHz they were 12.26 ms and 0.91 ms; the data needs about 10.7 ms.

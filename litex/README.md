@@ -10,7 +10,7 @@ reference SoC has two NaxRiscv cores and runs Debian from the SD card. The Linux
 | `adp_xc7k160_target.py` | The SoC: the CPU (VexRiscv by default), the BIOS, the UART, the 1 GiB DDR3 as main RAM, the buttons and the displays. As options: the LiteDRAM BIST, Etherbone or the MAC on the 10/100 Ethernet, the SD card, and the AC97 controller with DMA |
 | `adp_ac97.py` | The AC97 controller: the AC-link, the codec commands, and two DMA engines for playback and capture |
 | `adp_ethmac.py` | The Ethernet MAC with DMA: the MAC core of LiteEth with a DMA front end on an AXI4 master |
-| `naxriscv_l1.scala` | Changes the L1 cache sizes of NaxRiscv (see "Size of the L1 caches" below) |
+| `naxriscv_l1.scala` | Changes the L1 caches of NaxRiscv: their sizes, and the width of their refill buses (see "Size of the L1 caches" and "Refill buses and the system clock" below) |
 | `versions.sh` | Lists the URL and the commit of each repository of a LiteX installation |
 | `versions.txt` | The output of `versions.sh` for the installation that built the reference SoC |
 | `tftpd.py` | A TFTP server that only reads, for the network boot of the BIOS |
@@ -85,11 +85,11 @@ board loads it at power-on ([docs/configuration.md](../docs/configuration.md)).
 export JAVA_HOME=/path/to/java-17-openjdk PATH=/path/to/sbt/bin:$PATH
 python3 $A/litex/adp_xc7k160_target.py --build \
     --cpu-type naxriscv --xlen 64 --with-fpu --with-rvc --with-coherent-dma --cpu-count 2 \
-    --l2-bytes 524288 --l2-ways 8 --integrated-sram-size 0x4000 --sys-clk-freq 100e6 \
+    --l2-bytes 524288 --l2-ways 8 --integrated-sram-size 0x4000 --sys-clk-freq 110e6 \
     --with-ethernet --with-ethernet-dma --with-sdcard-write \
     --with-ac97 --soc-json csr.json \
     --scala-file gen.scala --scala-file $A/litex/naxriscv_l1.scala \
-    --scala-args icache-bytes=32768,icache-ways=8,dcache-bytes=32768,dcache-ways=8
+    --scala-args icache-bytes=32768,icache-ways=8,dcache-bytes=32768,dcache-ways=8,icache-mem-bits=256,dcache-mem-bits=256,icache-reduced-banks=1
 ```
 
 - NaxRiscv is an out-of-order RV64GC core of SpinalHDL. The build needs JDK 17 and sbt, in addition
@@ -98,13 +98,16 @@ python3 $A/litex/adp_xc7k160_target.py --build \
 - Each core has 32 KiB of L1 instruction cache and 32 KiB of L1 data cache, each with 8 ways
   (`naxriscv_l1.scala`). The cores share one coherent L2 cache of 512 KiB in front of LiteDRAM
   (`NaxSoc.scala` of NaxRiscv).
-- The CPU runs at the system clock, 100 MHz. Thus the DDR3 runs at DDR3-800.
+- The L1 caches refill through buses of 256 bits. Thus a line of 64 bytes takes 2 beats
+  ("Refill buses and the system clock").
+- The CPU runs at the system clock, 110 MHz. Thus the DDR3 runs at DDR3-880. The SD card then runs
+  at 27.5 MHz and not at 50 MHz ([linux/README.md](linux/README.md), "SD card").
 - The 8 KiB default SRAM left less than 2 KiB for the stack of the BIOS. Thus the SRAM is 16 KiB.
 - The Ethernet MAC is the MAC with DMA ("Ethernet and the SD card"). The BIOS thus boots only from
   the SD card.
-- The build on 2026-11-22 was -2 at 100 MHz with Vivado 2025.2.1. The setup slack was +0.109 ns,
-  with 64,973 LUT, 45,340 FF and 219.5 block RAM tiles. The slack of the clock `ac97_bit_clk` was
-  +1.621 ns.
+- The build on 2026-11-22 was -2 at 110 MHz with Vivado 2025.2.1. The setup slack was +0.672 ns,
+  with 72,357 LUT, 49,249 FF and 285.5 block RAM tiles. The slack of the clock `ac97_bit_clk` was
+  +1.606 ns.
 
 ### Buses of NaxRiscv in LiteX
 
@@ -112,8 +115,14 @@ python3 $A/litex/adp_xc7k160_target.py --build \
   SoC bus.
 - The peripherals (the CSRs, the SRAM slots of the MAC, the ROM and the SRAM) are on the AXI-Lite
   bus `pBus` of 32 bits. LiteX converts it to its Wishbone SoC bus.
-- The DMA masters (LiteSDCard, AC97) are Wishbone masters. LiteX converts them to the coherent DMA
-  bus of NaxRiscv (AXI4, 64 bits), one beat for each transfer.
+- The DMA masters are on the DMA bus of LiteX, an AXI4 bus of 64 bits. The MAC with DMA is an AXI4
+  master of 64 bits. LiteSDCard and AC97 are Wishbone masters, and LiteX converts each transfer
+  into one AXI4 beat.
+- NaxSoc makes its coherent DMA port as wide as the refill bus of the D-cache: 256 bits in the
+  reference SoC. The CPU wrapper of LiteX connects only 64 bits. Thus the target puts one
+  `AXIUpConverter` between the arbiter of the DMA bus and the port.
+- The arbiter of the DMA bus changes master only after all responses came back. Thus the responses
+  stay in the order that the converter needs.
 
 Thus `--bus-standard axi` changes only the path from the CPU to the peripherals. The LiteEth MAC has
 only a Wishbone interface, so a converter stays in front of its slots.
@@ -186,6 +195,78 @@ MPKI is the number of refills for each 1000 instructions.
 - Code with a large footprint gains most: the Perl interpreter had 78% fewer I$ refills.
 - A pointer chase gave 3.1 cycles for an L1 hit and about 28.5 cycles for an L2 hit with both
   SoCs. The 32 KiB D$ moved the step from 16 KiB to 32 KiB of data.
+- Both SoCs ran at 100 MHz with refill buses of 64 bits.
+
+### Refill buses and the system clock
+
+`naxriscv_l1.scala` also sets the width of the refill buses between the L1 caches and the L2
+cache: `icache-mem-bits` and `dcache-mem-bits`. The default of NaxRiscv is 64 bits.
+
+A simulation found the parts of an L2 hit. It used `litex_sim` of LiteX with Verilator, the cores
+and caches of the reference SoC, refill buses of 64 bits, and no DMA masters. A program without
+the MMU chased pointers through 256 KiB with a stride of 64 bytes. It gave 28.0 cycles for each
+load; Linux on the board gave 28.5. The trace of one load gave these parts. The program is not in
+this repository.
+
+| Part | Cycles |
+|---|---|
+| The A request through the pipeline stages of the D-cache bus and of the L2 input | 2 |
+| The L2 cache: the tags, then the data | 5 |
+| The D response through the pipeline stages back to the D-cache | 2 |
+| The other 7 beats of the line of 64 bytes | 7 |
+| The D-cache completes the refill, and the load runs again | 5 |
+| The next load: wake-up, dispatch, address, and the miss in the D-cache | 7 |
+
+- The D-cache waits for all of the line before the load runs again. Thus the beats of the line are
+  7 of the 28 cycles.
+- With refill buses of 128 bits, the simulation gave 24.0 cycles. With 256 bits, it gave 22.0.
+
+A wide refill bus makes each way of an L1 cache a bank of the same width, and that uses more block
+RAM. `icache-reduced-banks=1` keeps the banks of the I-cache at 64 bits. The D-cache of NaxRiscv
+`9f452d5` has no such option: its writeback path does not implement it.
+
+The builds of 2026-11-22, -2 with the other options of the reference SoC. The two middle rows had a
+converter for each DMA master, and not the one converter of the target:
+
+| System clock, refill buses | Setup slack | LUT | FF | Block RAM tiles |
+|---|---|---|---|---|
+| 100 MHz, 64 bits | +0.109 ns | 64,973 | 45,340 | 219.5 |
+| 110 MHz, 64 bits | +0.049 ns | 65,293 | 45,342 | 219.5 |
+| 100 MHz, 256 bits | +0.143 ns | 81,156 | 49,714 | 323.5 |
+| 110 MHz, 128 bits | +0.135 ns | 69,504 | 46,796 | 257.5 |
+| 110 MHz, 256 bits, I-cache banks of 64 bits (the reference SoC) | +0.672 ns | 72,357 | 49,249 | 285.5 |
+
+Results **[measured, 2026-11-22]**. The same kernel and Debian ran on each SoC after a JTAG load,
+with a DTB of the same system clock. `lat` chased pointers in a random order with a stride of 64
+bytes, under Linux. The time is the geometric mean of the six workloads below, compared with the
+first row.
+
+| System clock, refill buses | L1 hit | L2 hit (128 KiB) | DDR3 (32 MiB) | Time |
+|---|---|---|---|---|
+| 100 MHz, 64 bits | 31.3 ns | 284.9 ns (28.5 cycles) | 904.2 ns | — |
+| 110 MHz, 64 bits | 28.1 ns | 258.6 ns (28.4 cycles) | 794.2 ns | −10.3% |
+| 100 MHz, 256 bits | 30.9 ns | 223.5 ns (22.4 cycles) | 763.7 ns | −5.7% |
+| 110 MHz, 128 bits | 28.1 ns | 221.1 ns (24.3 cycles) | 726.6 ns | −13.3% |
+| 110 MHz, 256 bits (the reference SoC) | 27.9 ns | 202.8 ns (22.3 cycles) | 694.4 ns | −14.4% |
+
+The workloads on the first row and on the reference SoC. `perf stat` counted each workload, with no
+other workload on the board:
+
+| Workload | 100 MHz, 64 bits | The reference SoC | IPC |
+|---|---|---|---|
+| `7z a -mx5`, 4 MiB | 62.8 s | 53.5 s (−14.9%) | 0.90 → 0.96 |
+| `7z t`, 4 times | 9.60 s | 8.47 s (−11.8%) | 0.96 → 0.99 |
+| `xz -dc`, 4 times | 10.2 s | 8.84 s (−13.2%) | 0.99 → 1.03 |
+| `sha256sum`, 16 MiB | 7.07 s | 6.26 s (−11.4%) | 1.73 → 1.77 |
+| `gcc -O2`, two C files | 60.8 s | 49.6 s (−18.4%) | 0.60 → 0.67 |
+| Perl, regexes and hashes | 22.2 s | 18.6 s (−16.3%) | 0.81 → 0.88 |
+
+- The clock alone gave 10.3%. The wide buses also decreased the cycles of each workload.
+- The buses of 256 bits also decreased the time of a DDR3 access, because the L2 cache refills
+  through the same width.
+- The worst path of the first row was a route of 8.75 ns from an address register of the L2 cache
+  to its data RAM. The build at 110 MHz met timing without a change to that path.
+- At 110 MHz LiteDRAM calibrated the DDR3 at 880 MT/s, and the memtest of the BIOS passed.
 - A branch that the predictor misses costs about 14.6 cycles (a loop on random data).
 
 ### Power estimate
@@ -207,8 +288,9 @@ With the 512 KiB L2, the estimate for 2 cores is 1.963 W.
 
 - LiteDRAM controls the DDR3 with `K7DDRPHY` at a ratio of 1:4. Thus the data rate is 8 times the
   system clock. The default is 175 MHz: DDR3-1400.
-- The MMCM uses `SYSCLK` (200 MHz, `DIFF_SSTL15`). It makes the system clock, the 4× clock and the
-  200 MHz reference of `IDELAYCTRL`.
+- The MMCM uses `SYSCLK` (200 MHz, `DIFF_SSTL15`). It makes the system clock and the 4× clock.
+- `IDELAYCTRL` gets `SYSCLK` itself through a BUFG as its 200 MHz reference. Thus the MMCM needs no
+  200 MHz output, and the system clock can be 110 MHz.
 - The controller uses the timings of `MT41J256M16`. MIG uses the same substitute for the
   PieceMakers part ([docs/ddr3.md](../docs/ddr3.md)).
 - The I/O standards are the ones of MIG in `pins.csv`. The platform does not set
@@ -222,7 +304,7 @@ cannot be more than 1420 MT/s. The rates that were tried on 2026-11-21, all as -
 | Rate | System clock | Result of the build |
 |---|---|---|
 | 1600 | 200 MHz | Timing not met. Pulse width slack −0.158 ns at the BUFG of the 4× clock |
-| 1333 | 166.67 MHz | No build. LiteX found no MMCM setting that makes 166.67, 666.67 and 200 MHz from 200 MHz |
+| 1333 | 166.67 MHz | No build. LiteX found no MMCM setting that makes 166.67, 666.67 and 200 MHz from 200 MHz. The target now takes the 200 MHz reference from `SYSCLK`, but this rate was not built again |
 | **1400** | 175 MHz | Setup slack +0.339 ns, pulse width slack +0.020 ns. 7,049 LUT, 5,449 FF |
 | 800 | 100 MHz | Setup slack +1.583 ns. 6,970 LUT, 5,409 FF |
 
@@ -263,8 +345,8 @@ NaxRiscv. The CPU then does not copy the frames ([linux/README.md](linux/README.
 - Transmit: a FIFO of 64 descriptors, one for each piece of a frame, at any byte address. The engine
   reads the pieces with single AXI reads into one of two frame buffers of 2 KiB. It writes the
   checksum that `CHECKSUM_PARTIAL` asks for, and then sends the frame.
-- 100 Mbit/s needs one 64-bit beat in 64 cycles at 100 MHz. Thus the engine makes one AXI transfer
-  at a time, without bursts.
+- 100 Mbit/s needs one 64-bit beat in 640 ns, which is 64 cycles at 100 MHz. Thus the engine makes
+  one AXI transfer at a time, without bursts.
 - The CSRs keep the base address and the interrupt of the LiteEth MAC, so the other addresses of
   the SoC do not move.
 
@@ -272,13 +354,14 @@ Before the first build, a testbench of migen simulated the front end with an AXI
 latency. It sent frames of 14 to 1600 bytes and pieces at random byte addresses, and all were
 correct. The testbench is not in this repository.
 
-The builds of 2026-11-22, -2 at 100 MHz, with all other options of the reference SoC:
+The builds of 2026-11-22, -2 at 100 MHz, with the other options of the reference SoC, but with
+refill buses of 64 bits:
 
 | Ethernet | Setup slack | LUT | FF | Block RAM tiles |
 |---|---|---|---|---|
 | LiteEth, 8 RX and 4 TX slots | +0.285 ns | 64,747 | 44,798 | 224.5 |
 | LiteEth, 16 RX and 8 TX slots | +0.371 ns | 65,125 | 44,815 | 232.5 |
-| The MAC with DMA (`--with-ethernet-dma`, the reference SoC) | +0.109 ns | 64,973 | 45,340 | 219.5 |
+| The MAC with DMA (`--with-ethernet-dma`) | +0.109 ns | 64,973 | 45,340 | 219.5 |
 
 The slack of the MAC with DMA is the lowest, but its worst path is in the L2 cache of NaxRiscv: a
 route of 8.75 ns to a block RAM of the L2 data. Thus the placement, and not the MAC, sets it.
