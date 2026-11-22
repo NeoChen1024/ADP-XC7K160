@@ -92,6 +92,8 @@ The root file system:
   systemd-timesyncd. Root has no password on the console; SSH accepts only the key of `key.pub`.
 - The board has no clock with a battery. Without timesyncd, `apt` refuses the signatures of the
   archive, because the date is wrong. `fake-hwclock` keeps the last time over a reboot.
+- `libpam-systemd` is in the package list. Without it, `pam_systemd.so` is missing, a login gets no
+  `XDG_RUNTIME_DIR`, and `user@0.service` fails at each login of root.
 - `f2fs-tools` is installed. journald keeps its files in RAM (`Storage=volatile`,
   `RuntimeMaxUse=32M`). `apt-daily.timer` and `apt-daily-upgrade.timer` are masked.
 - `rootfs/etc/update-motd.d/20-adp-xc7k160` is the login message. It gives the board, the CPU, the
