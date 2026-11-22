@@ -8,7 +8,7 @@
 # bootargs (the generator gives a static ip= and an ext4 root), and adds the nodes that the
 # generator does not know: the two seven-segment digits (adp-seven-seg.c), the AC97 controller
 # (adp-ac97.c), and the PMU events of NaxRiscv. The AC97 driver has fixed CSR offsets; this script
-# checks them.
+# checks them. It also lets the SD card run in high speed mode (50 MHz).
 
 import argparse
 import json
@@ -21,6 +21,14 @@ sys.dont_write_bytecode = True
 BOOTARGS = ("console=liteuart earlycon=liteuart,0xf0001000 rootwait root=/dev/mmcblk0p2 "
             "rootfstype=f2fs rootflags=lazytime,compress_algorithm=lz4,compress_extension=*,"
             "compress_chksum,atgc,gc_merge rw")
+
+# High speed mode: Linux switches the card to it, and the clock goes from 25 MHz to 50 MHz.
+# litex/linux/README.md gives the test of 2026-11-22.
+SD_HIGH_SPEED = """
+&mmc0 {
+    cap-sd-highspeed;
+};
+"""
 
 SEVEN_SEG = """
 &{{/soc}} {{
@@ -114,6 +122,8 @@ def main():
     with open(args.csr_json) as f:
         csr = json.load(f)
     bases = csr["csr_bases"]
+    if "sdcard" in bases:
+        dts += SD_HIGH_SPEED
     if "ac97" in bases:
         dts += ac97_node(csr)
     if "config_cpu_type_naxriscv" in csr["constants"]:

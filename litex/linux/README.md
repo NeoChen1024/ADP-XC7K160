@@ -56,7 +56,8 @@ in `r1`, OpenSBI stops without output. Do not use the defaults of LiteX: they pu
   `snd-ac97-codec`.
 - **DTB**: `python3 mkdts.py csr.json > linux.dts && dtc -O dtb -o linux.dtb linux.dts`, with the
   Python of the LiteX installation. `mkdts.py` runs `litex_json2dts_linux`, replaces the bootargs,
-  and adds the nodes of the seven-segment digits and of the AC97 controller.
+  and adds the nodes of the seven-segment digits and of the AC97 controller. It also adds the PMU
+  events and the high speed mode of the SD card.
 - **A DTB works only with the SoC that it was made from.** A new CSR moves the addresses of the
   others. The AC97 controller moved the MAC, the SD card, the digits and the XADC, for example.
 
@@ -214,6 +215,62 @@ Results **[measured, 2026-11-21]**, with the patch and 8 RX slots:
   not change.
 - During transfers in both directions at the same time, with the AC97 test, the MAC dropped 13
   frames. The transfers completed.
+
+### SD card
+
+The `litex_mmc` driver of Linux 6.18.64 keeps the defaults of the MMC core: one segment of one page
+for each request. Thus each request reads or writes 8 blocks of 512 bytes. On 2026-11-22 a trace of
+the events `mmc_request_start` and `mmc_request_done` showed the cost of 512 such reads at 25 MHz:
+
+- Each request took 693 µs in the driver on average. The data of 8 blocks needs about 333 µs of the
+  bus.
+- The time between two requests was 519 µs on average.
+
+`patches/0003-mmc-litex-mmc-requests-of-128-kib.patch` allows requests of 128 KiB in 32 segments.
+A request of several segments goes through the bounce buffer of the driver. The wait for the data
+gets a timeout of 1 s, because 128 KiB needs 11 ms at 25 MHz.
+
+`mkdts.py` gives `cap-sd-highspeed` to the SD card node. Linux then switches the card to high speed
+mode, and the clock goes from 25 MHz to 50 MHz. The divider of LiteSDCard makes 50 MHz from the
+system clock of 100 MHz.
+
+The first test at 50 MHz had protection, because a refused write makes the later writes of this
+card one write late ([../../docs/sd-card.md](../../docs/sd-card.md)):
+
+- A temporary parameter of the driver kept the clock at 25 MHz during the boot. The card was in
+  high speed mode.
+- The root file system was frozen with `fsfreeze`, and the swap was off. Then the debugfs file
+  `clock` of `mmc0` set 50 MHz.
+- At 50 MHz, a read of 128 MiB of partition 2 gave the same MD5 as at 25 MHz. Two writes of 32 MiB
+  to partition 3 read back the same. The kernel showed no error.
+
+Other limits of the SD card in Linux:
+
+- LiteSDCard gives its interrupt at the end of the command response, and not at the end of the
+  data. The driver polls for the end of the data, with sleeps of 2 to 5 µs.
+- The DMA of LiteSDCard is a 32-bit Wishbone master. LiteX connects it to the coherent DMA bus of
+  NaxRiscv, with one beat for each transfer ([../README.md](../README.md)). If the DMA is slow,
+  LiteSDCard stops the SD clock.
+
+Results **[measured, 2026-11-22]**, with the card in the socket (CID name `SH32G`). `dd` read and
+wrote 32 MiB of partition 3, with the swap off. The reads used `iflag=direct`, and the writes used
+`oflag=direct conv=fsync`. The data read back was the same as the data written. The columns give
+the `dd` block size, and the values are in MB/s.
+
+| Clock, request size | Read 4 KiB | Read 64 KiB | Read 1 MiB | Write 4 KiB | Write 64 KiB | Write 1 MiB |
+|---|---|---|---|---|---|---|
+| 25 MHz, 4 KiB | 2.9 | 3.0 | 3.3 | 1.5 | 1.5 | 1.6 |
+| 25 MHz, 128 KiB | 2.8 | 8.8 | 8.6 | 1.6 | 7.7 | 8.5 |
+| 50 MHz (high speed), 128 KiB | 3.6 | 13.8 | 15.3 | 1.8 | 12.8 | 13.0 |
+
+- With blocks of 1 MiB, the CPU time for the read of 32 MiB was 5.9 s, 2.5 s and 1.0 s. For the
+  write it was 9.5 s, 2.2 s and 1.3 s.
+- The bus limit with 4 data lines is 12.5 MB/s at 25 MHz and 25 MB/s at 50 MHz.
+- A trace of 128 reads of 128 KiB gave the time in the driver and the time between two requests.
+  At 50 MHz they were 7.35 ms and 0.87 ms; the data needs about 5.3 ms of the bus. In high speed
+  mode at 25 MHz they were 12.26 ms and 0.91 ms; the data needs about 10.7 ms.
+- Thus each request of 128 KiB had about 2 ms more than its data at both clocks. The DMA did not
+  stop the clock for a long time at 50 MHz.
 
 ## Performance counters
 

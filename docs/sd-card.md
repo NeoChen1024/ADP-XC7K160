@@ -17,7 +17,8 @@ workbench]**. The clock was 238 kHz, and the card was one 32 GB SanDisk SDHC car
   correct. With a wrong CRC on `SD_DAT2`, the card answered CRC status `101` and kept the contents.
   Thus **`SD_CMD` and `SD_DAT0` to `SD_DAT3` work in both directions**.
 - LiteSDCard of LiteX read blocks at 21.875 MHz, and Linux uses the card as its root file system
-  ([litex/linux/README.md](../litex/linux/README.md)).
+  ([litex/linux/README.md](../litex/linux/README.md)). Linux runs the card in high speed mode at
+  50 MHz, and that document gives the speed.
 
 Firmware must know two behaviours. Both are behaviours of this card; a different card can be
 different.

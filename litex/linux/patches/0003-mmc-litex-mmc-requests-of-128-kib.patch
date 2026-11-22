@@ -1,0 +1,96 @@
+From: ADP-XC7K160 board notes
+Subject: [PATCH] mmc: litex_mmc: requests of 128 KiB
+
+The driver keeps the defaults of the MMC core: one segment of one page for
+each request. Each request then reads or writes 8 blocks, and the fixed cost
+of the commands and of the block layer is larger than the time of the data.
+On a NaxRiscv SoC at 100 MHz with the card at 25 MHz, the read speed was
+3.3 MB/s and the write speed 1.6 MB/s.
+
+Allow requests of 128 KiB in 32 segments. A request of several segments goes
+through the bounce buffer, which the driver already has. The data of such a
+request needs 11 ms at 25 MHz, and the DMA can stop the SD clock. Thus the wait
+for the data gets a timeout of 1 s; the commands keep 20 ms.
+
+--- a/drivers/mmc/host/litex_mmc.c
++++ b/drivers/mmc/host/litex_mmc.c
+@@ -20,6 +20,7 @@
+ #include <linux/mod_devicetable.h>
+ #include <linux/module.h>
+ #include <linux/platform_device.h>
++#include <linux/sizes.h>
+ 
+ #include <linux/mmc/host.h>
+ #include <linux/mmc/mmc.h>
+@@ -69,6 +70,14 @@
+ #define SD_SLEEP_US       5
+ #define SD_TIMEOUT_US 20000
+ 
++/*
++ * A request of 128 KiB keeps the data bus busy for 11 ms at 25 MHz, and
++ * for 21 ms at f_min. The DMA can also stop the SD clock when memory is
++ * slow. Thus the wait for the data has its own, longer timeout.
++ */
++#define SD_MAX_REQ_SIZE    SZ_128K
++#define SD_DATA_TIMEOUT_US 1000000
++
+ #define SD_INIT_DELAY_US  1000
+ #define SD_INIT_CLK_HZ    400000
+ 
+@@ -103,13 +112,14 @@
+ 	bool app_cmd;
+ };
+ 
+-static int litex_mmc_sdcard_wait_done(void __iomem *reg, struct device *dev)
++static int litex_mmc_sdcard_wait_done(void __iomem *reg, struct device *dev,
++				      unsigned int timeout_us)
+ {
+ 	u8 evt;
+ 	int ret;
+ 
+ 	ret = readx_poll_timeout(litex_read8, reg, evt, evt & SD_BIT_DONE,
+-				 SD_SLEEP_US, SD_TIMEOUT_US);
++				 SD_SLEEP_US, timeout_us);
+ 	if (ret)
+ 		return ret;
+ 	if (evt == SD_BIT_DONE)
+@@ -150,7 +160,8 @@
+ 		wait_for_completion(&host->cmd_done);
+ 	}
+ 
+-	ret = litex_mmc_sdcard_wait_done(host->sdcore + LITEX_CORE_CMDEVT, dev);
++	ret = litex_mmc_sdcard_wait_done(host->sdcore + LITEX_CORE_CMDEVT, dev,
++					 SD_TIMEOUT_US);
+ 	if (ret) {
+ 		dev_err(dev, "Command (cmd %d) error, status %d\n", cmd, ret);
+ 		return ret;
+@@ -173,7 +184,8 @@
+ 	if (transfer == SD_CTL_DATA_XFER_NONE)
+ 		return ret; /* OK from prior litex_mmc_sdcard_wait_done() */
+ 
+-	ret = litex_mmc_sdcard_wait_done(host->sdcore + LITEX_CORE_DATEVT, dev);
++	ret = litex_mmc_sdcard_wait_done(host->sdcore + LITEX_CORE_DATEVT, dev,
++					 SD_DATA_TIMEOUT_US);
+ 	if (ret) {
+ 		dev_err(dev, "Data xfer (cmd %d) error, status %d\n", cmd, ret);
+ 		return ret;
+@@ -561,7 +573,18 @@
+ 	if (ret)
+ 		return ret;
+ 
+-	host->buf_size = mmc->max_req_size * 2;
++	/*
++	 * The DMA takes one contiguous buffer. A request of several segments
++	 * goes through the bounce buffer. Requests larger than the default of
++	 * one page reduce the fixed cost of the commands of each request.
++	 */
++	mmc->max_segs = SD_MAX_REQ_SIZE / PAGE_SIZE;
++	mmc->max_req_size = SD_MAX_REQ_SIZE;
++	mmc->max_seg_size = SD_MAX_REQ_SIZE;
++	mmc->max_blk_size = 512;
++	mmc->max_blk_count = SD_MAX_REQ_SIZE / 512;
++
++	host->buf_size = mmc->max_req_size;
+ 	host->buffer = dmam_alloc_coherent(dev, host->buf_size,
+ 					   &host->dma, GFP_KERNEL);
+ 	if (host->buffer == NULL)
