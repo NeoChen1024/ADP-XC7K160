@@ -1,0 +1,16 @@
+From: ADP-XC7K160 board notes
+Subject: [PATCH] net: adp-ethmac: PTP clock
+
+The MAC of the SoC has a PTP clock and stamps the SFD of each frame. The driver
+registers the clock with the PTP core.
+
+--- a/drivers/net/ethernet/litex/Kconfig
++++ b/drivers/net/ethernet/litex/Kconfig
+@@ -28,6 +28,7 @@
+ config ADP_ETHMAC
+ 	tristate "ADP-XC7K160 Ethernet MAC with DMA"
+ 	depends on OF && HAS_IOMEM && HAS_DMA
++	depends on PTP_1588_CLOCK_OPTIONAL
+ 	select PHYLIB
+ 	select MDIO_BITBANG
+ 	help

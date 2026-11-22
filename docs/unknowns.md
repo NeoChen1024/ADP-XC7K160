@@ -8,8 +8,12 @@ Other items:
 
 - The polarity of `PHY_PWRDWN`: it is known only that low is normal operation
   ([ethernet.md](ethernet.md)).
-- Ethernet was tested only at 100BASE-TX full duplex. 10 Mbit/s and half duplex (`MAC_COL`,
-  `MAC_CRS`) were not tested.
+- Ethernet: half duplex (`MAC_COL`, `MAC_CRS`) was not tested. The LiteX MACs have no CSMA/CD, and
+  the Linux driver refuses a half duplex link.
+- Ethernet: the true transmit and receive latency of the DM9161CEP. The PTP stamps use the
+  typical values of the datasheet, which were not measured ([ethernet.md](ethernet.md)). Whether
+  `MDINTR` (`MAC_PHY_LINKSTS`) goes high when an interrupt is unmasked: no design used it. The
+  mechanism of the preamble errors of `LiteEthPHYMIIRX` at 100 Mbit/s.
 - The SD card was tested only with one card. The workbench used 238 kHz. Linux on NaxRiscv used
   25 MHz, 27.5 MHz and 50 MHz (high speed mode), from 2026-11-22 for less than one day at 50 MHz.
   The timing margin at 50 MHz is not known.

@@ -29,7 +29,7 @@ text says that it is not known.
 | DDR3 | 1 GiB, 32 bits. MIG works up to DDR3-1600, LiteDRAM up to DDR3-1400 | [docs/ddr3.md](docs/ddr3.md) |
 | Buttons, displays, resets | 8 buttons without pull-ups, two seven-segment digits, `PORn` after each configuration | [docs/buttons-displays-resets.md](docs/buttons-displays-resets.md) |
 | U17, U16 | 2 MiB SPI flash at 1.8 V; 16 KB I2C EEPROM | [docs/flash-eeprom.md](docs/flash-eeprom.md) |
-| Ethernet | 10/100 with a DM9161 PHY (MII). The Gigabit PHY is not fitted | [docs/ethernet.md](docs/ethernet.md) |
+| Ethernet | 10/100 with a DM9161CEP PHY (MII). The Gigabit PHY is not fitted | [docs/ethernet.md](docs/ethernet.md) |
 | Audio | ALC203 AC97 codec | [docs/audio.md](docs/audio.md) |
 | SD card | 4-bit bus and SPI mode | [docs/sd-card.md](docs/sd-card.md) |
 | Other parts | LCD, IDE/CF, AICE, trace, PCIe: not used. USB: not fitted | [docs/peripherals.md](docs/peripherals.md) |

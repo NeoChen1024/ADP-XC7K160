@@ -71,12 +71,26 @@ ETHMAC = """
 &{{/soc}} {{
     ethmac: ethernet@{base:x} {{
         compatible = "adp-xc7k160,ethmac";
-        reg = <0x{base:x} 0x{size:x}>;
+        reg = <0x{base:x} 0x{size:x}>{mdio_reg};
         interrupts = <{irq}>;
-        local-mac-address = [02 ad b0 00 00 01];
+        local-mac-address = [02 ad b0 00 00 01];{mdio_node}
     }};
 }};
 """
+
+# The MDIO CSRs of LiteEth (ethphy_mdio_w, ethphy_mdio_r) are the second register range. The
+# DM9161 answers at address 0 (docs/ethernet.md).
+ETHMAC_MDIO_REG = ", <0x{mdio:x} 0x8>"
+ETHMAC_MDIO_NODE = """
+        phy-mode = "mii";
+        phy-handle = <&ethphy0>;
+        mdio {
+            #address-cells = <1>;
+            #size-cells = <0>;
+            ethphy0: ethernet-phy@0 {
+                reg = <0>;
+            };
+        };"""
 
 # The hardware events of NaxRiscv (PerformanceCounterService in its Service.scala): 1 I$ refill,
 # 2 D$ refill, 3 D$ writeback, 4 branch miss. mhpmcounter3 to 6 (mask 0x78) can count each of them.
@@ -111,11 +125,26 @@ AC97_OFFSETS = {
 ETHMAC_OFFSETS = {
     "rx_buf": 0x00, "rx_bufs": 0x04, "rx_stat": 0x08, "rx_csum": 0x0c, "rx_pop": 0x10,
     "rx_dropped": 0x14, "tx_addr": 0x18, "tx_ctrl": 0x1c, "tx_room": 0x20, "tx_done": 0x24,
-    "ev_status": 0x28, "ev_pending": 0x2c, "ev_enable": 0x30, "core_rx_datapath_crc_errors": 0x3c,
+    "ev_status": 0x28, "ev_pending": 0x2c, "ev_enable": 0x30,
+    "core_rx_datapath_preamble_errors": 0x38, "core_rx_datapath_crc_errors": 0x3c,
 }
 
+# The CSRs of the PTP clock, the TX stamps, the filter and the receive diagnostics, if the SoC has
+# them. adp-ethmac.c finds them by the size of the register range.
+ETHMAC_PTP_OFFSETS = {
+    "ptp_ctrl": 0x40, "ptp_snap_sec_hi": 0x44, "ptp_snap_sec": 0x48, "ptp_snap_ns": 0x4c,
+    "ptp_set_sec_hi": 0x50, "ptp_set_sec": 0x54, "ptp_set_ns": 0x58, "ptp_adj": 0x5c,
+    "ptp_incr_hi": 0x60, "ptp_incr": 0x64, "ptp_incr_nom_hi": 0x68, "ptp_incr_nom": 0x6c,
+    "txts_stat": 0x70, "txts_sec": 0x74, "txts_ns": 0x78, "txts_pop": 0x7c, "txts_lost": 0x80,
+    "filt_ctrl": 0x84, **{f"filt_addr{i}_hi": 0x88 + 8 * i for i in range(4)},
+    **{f"filt_addr{i}": 0x8c + 8 * i for i in range(4)},
+    "filt_hash_hi": 0xa8, "filt_hash": 0xac, "filt_dropped": 0xb0,
+    "rxdiag_no_sfd": 0xb4, "rxdiag_bad_pre": 0xb8, "rxdiag_dribble": 0xbc, "rxdiag_last": 0xc0,
+}
+ETHMAC_PTP_END = 0xc4
 
-def checked_node(csr, name, offsets, driver, template):
+
+def checked_node(csr, name, offsets, driver, template, **extra):
     base = csr["csr_bases"][name]
     regs = csr["csr_registers"]
     for reg, offset in offsets.items():
@@ -123,7 +152,19 @@ def checked_node(csr, name, offsets, driver, template):
         if got != offset:
             sys.exit(f"{name}_{reg} is at +0x{got:x}, and {driver} expects +0x{offset:x}")
     end = max(r["addr"] + 4 * r["size"] for n, r in regs.items() if n.startswith(f"{name}_"))
-    return template.format(base=base, size=end - base, irq=csr["constants"][f"{name}_interrupt"])
+    return template.format(base=base, size=end - base, irq=csr["constants"][f"{name}_interrupt"],
+                           **extra)
+
+
+def ethmac_mdio(csr):
+    """The MDIO range and the PHY node of the MAC with DMA, or nothing without MDIO."""
+    regs = csr["csr_registers"]
+    if "ethphy_mdio_w" not in regs:
+        return {"mdio_reg": "", "mdio_node": ""}
+    mdio = regs["ethphy_mdio_w"]["addr"]
+    if regs["ethphy_mdio_r"]["addr"] != mdio + 4:
+        sys.exit("ethphy_mdio_r does not follow ethphy_mdio_w, as adp-ethmac.c expects")
+    return {"mdio_reg": ETHMAC_MDIO_REG.format(mdio=mdio), "mdio_node": ETHMAC_MDIO_NODE}
 
 
 def ac97_node(csr):
@@ -160,7 +201,12 @@ def main():
     if "ac97" in bases:
         dts += ac97_node(csr)
     if "ethdma" in bases:
-        dts += checked_node(csr, "ethdma", ETHMAC_OFFSETS, "adp-ethmac.c", ETHMAC)
+        offsets = dict(ETHMAC_OFFSETS)
+        if "ethdma_ptp_ctrl" in csr["csr_registers"]:
+            offsets.update(ETHMAC_PTP_OFFSETS)
+            if csr["csr_registers"]["ethdma_rxdiag_last"]["addr"] + 4 - bases["ethdma"] != ETHMAC_PTP_END:
+                sys.exit("the CSRs of ethdma do not end where adp-ethmac.c expects")
+        dts += checked_node(csr, "ethdma", offsets, "adp-ethmac.c", ETHMAC, **ethmac_mdio(csr))
     if "config_cpu_type_naxriscv" in csr["constants"]:
         dts += PMU
     if "seven_seg" in bases:

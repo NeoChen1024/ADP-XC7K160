@@ -55,7 +55,7 @@ U24,12,HR,IO_L2P_T0_12,TRC_DATA0,TRC_DATA[0],LVCMOS33,,ACON2,ACON2.14,22,shares 
 U25,12,HR,IO_L2N_T0_12,TRC_DATA1,TRC_DATA[1],LVCMOS33,,ACON2,ACON2.16,22,shares the pin with TP_SPI_DI
 V23,12,HR,IO_L3P_T0_DQS_12,TRC_DATA2,TRC_DATA[2],LVCMOS33,,ACON2,ACON2.18,22,shares the pin with TP_SPI_CLK
 V24,12,HR,IO_L3N_T0_DQS_12,TRC_DATA3,TRC_DATA[3],LVCMOS33,,ACON2,ACON2.20,22,shares the pin with TP_IRQ
-AA23,12,HR,IO_L11P_T1_SRCC_12,MAC_RX_CLK,MAC_RX_CLK,LVCMOS33,board,U9,U9.34,22,
+AA23,12,HR,IO_L11P_T1_SRCC_12,MAC_RX_CLK,MAC_RX_CLK,LVCMOS33,board,U9,U9.34,22,"also a strap of the PHY, read after every load of the FPGA: a pull-down selects GPSI at 10 Mbit/s"
 Y23,12,HR,IO_L12P_T1_MRCC_12,MAC_TX_CLK,MAC_TX_CLK,LVCMOS33,board,U9,U9.22,22,"also a strap of the PHY, read after every load of the FPGA: no PULLUP on it"
 AD24,12,HR,IO_L16N_T2_12,MAC_TX_EN,MAC_TX_EN,LVCMOS33,board,U9,U9.21,22,
 AB22,12,HR,IO_L17P_T2_12,MAC_TXD0,MAC_TXD[0],LVCMOS33,board,U9,U9.20,22,
@@ -72,7 +72,7 @@ AF23,12,HR,IO_L22N_T3_12,MAC_CRS,MAC_CRS,LVCMOS33,board,U9,U9.35,22,"also a stra
 AD25,12,HR,IO_L23P_T3_12,MAC_COL,MAC_COL,LVCMOS33,board,U9,U9.36,22,"also a strap of the PHY, read after every load of the FPGA: no PULLUP on it"
 AE25,12,HR,IO_L23N_T3_12,MAC_MDC,MAC_MDC,LVCMOS33,board,U9,U9.24,22,
 AE22,12,HR,IO_L24P_T3_12,MAC_MDIO,MAC_MDIO,LVCMOS33,board,U9,U9.25,22,
-AF22,12,HR,IO_L24N_T3_12,MAC_PHY_LINKSTS,MAC_PHY_LINKSTS,LVCMOS33,board,U9,U9.32,22,follows the FPGA's weak pull: the PHY does not drive it
+AF22,12,HR,IO_L24N_T3_12,MAC_PHY_LINKSTS,MAC_PHY_LINKSTS,LVCMOS33,board,U9,U9.32,22,"U9.32 is MDINTR, the interrupt output of the PHY (DM9161C datasheet); masked after reset, it follows the FPGA's weak pull. Also a strap: with a pull-down the interrupt is active high, with a pull-up active low"
 Y20,12,HR,IO_25_12,PHY_PWRDWN,PHY_PWRDWN,LVCMOS33,board,U9,U9.10,22,low: the PHY runs
 N16,13,HR,IO_0_13,AC97_SDI/I2S_RXD,AC97_SDI,LVCMOS33,board,U8,U8.8,22,
 K25,13,HR,IO_L1P_T0_13,AC97_SDO/I2S_TXD,AC97_SDO,LVCMOS33,board,U8,U8.5,22,"must be low as AC97_RSTn rises, or the codec enters a test mode"

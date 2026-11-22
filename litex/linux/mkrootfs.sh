@@ -23,7 +23,7 @@ apt-get install -y -q mmdebstrap e2fsprogs
 cd /work
 rm -rf rootfs
 mmdebstrap --arch=riscv64 --mode=root --variant=minbase \
-  --include=systemd-sysv,libpam-systemd,udev,systemd-resolved,systemd-timesyncd,openssh-server,iproute2,iputils-ping,ca-certificates,apt-utils,less,vim-tiny,procps,kmod,e2fsprogs,dosfstools,fdisk,cloud-guest-utils,wget,curl,sudo,htop,bash-completion \
+  --include=systemd-sysv,libpam-systemd,udev,systemd-resolved,systemd-timesyncd,openssh-server,iproute2,iputils-ping,ca-certificates,apt-utils,less,vim-tiny,procps,kmod,e2fsprogs,dosfstools,fdisk,cloud-guest-utils,wget,curl,sudo,htop,bash-completion,ethtool,linuxptp \
   --components=main \
   --customize-hook='echo adp-xc7k160 > "$1/etc/hostname"' \
   --customize-hook='printf "127.0.0.1 localhost\n127.0.1.1 adp-xc7k160\n" > "$1/etc/hosts"' \

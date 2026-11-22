@@ -23,7 +23,8 @@
 #
 # --with-ethernet-dma, with --with-ethernet, puts the MAC of adp_ethmac.py in place of the slot
 # memory of LiteEth: the frames go between the MAC and the main RAM through the coherent DMA bus of
-# NaxRiscv. The Linux driver is litex/linux/adp-ethmac.c. The BIOS then has no network boot.
+# NaxRiscv. The Linux driver is litex/linux/adp-ethmac.c. The BIOS then has no network boot. This
+# MAC also has a PTP clock with timestamps of the SFDs, and an address filter.
 #
 # --with-ac97 adds the AC97 controller of adp_ac97.py: playback and capture at 48 kHz through two DMA
 # engines, and the codec registers. The Linux driver is litex/linux/adp-ac97.c.
@@ -65,7 +66,7 @@ from litex.soc.interconnect import wishbone
 from litedram.modules import MT41J256M16
 from litedram.phy import s7ddrphy
 
-from liteeth.phy.mii import LiteEthPHYMII
+from adp_ethmac import ADPEthPHYMII
 
 import adp_xc7k160_platform
 
@@ -144,8 +145,9 @@ class BaseSoC(SoCCore):
         if with_etherbone or with_ethernet:
             # PORn holds the PHY in reset for about 385 ms after the load
             # (docs/buttons-displays-resets.md). The core
-            # needs nothing from the PHY before that.
-            self.ethphy = LiteEthPHYMII(
+            # needs nothing from the PHY before that. The receive path of ADPEthPHYMII aligns the
+            # bytes on the SFD (docs/ethernet.md).
+            self.ethphy = ADPEthPHYMII(
                 clock_pads = platform.request("eth_clocks"),
                 pads       = platform.request("eth"))
         if with_etherbone:
@@ -160,11 +162,16 @@ class BaseSoC(SoCCore):
                 raise ValueError("--with-ethernet-dma needs a CPU with a coherent DMA bus")
             dma_axi = axi.AXIInterface(data_width=64, address_width=32,
                 id_width=self.cpu.dma_bus.id_width)
+            if not hasattr(self.crg, "cd_sys4x"):
+                raise ValueError("--with-ethernet-dma needs sys4x, the clock of the PTP stamps")
             # Not "ethmac": litex_json2dts would then add a node for LiteEth.
-            self.ethdma = ADPEthMAC(self.ethphy, dma_axi)
+            self.ethdma = ADPEthMAC(self.ethphy, dma_axi, sys_clk_freq)
             self.dma_bus.add_master(name="ethdma", master=dma_axi)
             self.irq.add("ethdma", use_loc_if_exists=True)
             self.add_ethernet_timing_constraints(self.ethphy)
+            # The SFD toggles go from the MII clocks into sys4x through synchronizers.
+            platform.add_false_path_constraints(self.crg.cd_sys4x.clk,
+                self.ethphy.crg.cd_eth_rx.clk, self.ethphy.crg.cd_eth_tx.clk)
         elif with_ethernet:
             # More slots than the default of 2 give Linux at 100 MHz more time to empty them
             # (litex/linux/README.md, "Ethernet").

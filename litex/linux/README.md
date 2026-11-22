@@ -57,7 +57,8 @@ in `r1`, OpenSBI stops without output. Do not use the defaults of LiteX: they pu
   `snd-ac97-codec`.
 - **DTB**: `python3 mkdts.py csr.json > linux.dts && dtc -O dtb -o linux.dtb linux.dts`, with the
   Python of the LiteX installation. `mkdts.py` runs `litex_json2dts_linux`, replaces the bootargs,
-  and adds the nodes of the seven-segment digits, the AC97 controller and the MAC with DMA. It also
+  and adds the nodes of the seven-segment digits, the AC97 controller and the MAC with DMA (with
+  its MDIO bus and the PHY at address 0). It also
   adds the PMU events and the high speed mode of the SD card.
 - **A DTB works only with the SoC that it was made from.** A new CSR moves the addresses of the
   others. The AC97 controller moved the MAC, the SD card, the digits and the XADC, for example.
@@ -89,7 +90,8 @@ The bootargs and `/etc/fstab` give the F2FS options:
 The root file system:
 
 - Debian 13 riscv64 with systemd, sshd, systemd-networkd (DHCP on eth0), systemd-resolved and
-  systemd-timesyncd. Root has no password on the console; SSH accepts only the key of `key.pub`.
+  systemd-timesyncd. It also has `ethtool` and `linuxptp`. Root has no password on the console; SSH
+  accepts only the key of `key.pub`.
 - The board has no clock with a battery. Without timesyncd, `apt` refuses the signatures of the
   archive, because the date is wrong. `fake-hwclock` keeps the last time over a reboot.
 - `libpam-systemd` is in the package list. Without it, `pam_systemd.so` is missing, a login gets no
@@ -228,10 +230,39 @@ The patches of `liteeth`:
 - The engine keeps its buffers when eth0 goes down. The next open uses them again.
 - `rx_missed_errors` is the count of frames that the engine dropped for lack of room, and
   `rx_crc_errors` the count of frames with a bad CRC.
+- Link: the driver reads the PHY through the MDIO CSRs of LiteEth (`patches/0006`), and phylib
+  polls the PHY each second. The interrupt pin of the PHY (`MDINTR`, on `MAC_PHY_LINKSTS`) is not
+  connected in the SoC. The Generic PHY driver of phylib is used. The Davicom driver of Linux also
+  matches this PHY; it writes `0610` to register 16, which clears the preamble suppression of MDIO
+  and changes nothing that the board uses. A DTB without the MDIO range keeps the carrier on while
+  eth0 is up.
+- The MAC has no CSMA/CD and no pause frames. Thus the driver removes the half duplex modes and the
+  pause modes from the PHY. If the link is not full duplex, the carrier stays off.
+- `ethtool` gives the link settings, `-S` (the error counters of the MAC, the counters of the
+  driver and two counters of the PHY), `-d` (the CSRs of the MAC), `-g`, `-i` and `-T`.
+  `SIOCGMIIREG` reads the PHY. `mii-tool -vv` shows registers 16 and 17 as `0000`.
+- `phy_rx_errors` and `phy_disconnects` are the sums of registers 22 (`RX_ER` events) and 23 (link
+  drops) of the DM9161C. A read clears these registers, so another reader of them takes counts
+  away from `ethtool -S`.
+- PTP (`patches/0007`, `CONFIG_PTP_1588_CLOCK`): the driver registers the clock of the MAC as
+  `/dev/ptp0`. It finds the CSRs of the clock by the size of the register range in the DTB. The
+  receive filter of `SIOCSHWTSTAMP` is always `HWTSTAMP_FILTER_ALL`, because the engine stamps each
+  frame. One skb at a time gets a TX stamp; the driver counts the others in
+  `tx_hwtstamp_skipped`.
+- The xmit of a frame with a stamp starts a timer that reads the TX stamp FIFO each 100 µs. The
+  driver cannot wait for the tx event: the event is off while the queue is idle, and it comes
+  before the SFD of a short frame is on the MII.
+- The driver moves each stamp to the SFD on the cable. It uses one MII clock (40 ns at 100 Mbit/s,
+  400 ns at 10 Mbit/s), 2 ns from the simulation, and the typical latency of the PHY from the
+  DM9161C datasheet ([docs/ethernet.md](../../docs/ethernet.md)). The latency is 80 ns to send and
+  150 ns to receive at 100 Mbit/s, and 200 ns and 700 ns at 10 Mbit/s.
+- Filter: `ndo_set_rx_mode` writes the station address, up to three more unicast addresses, and the
+  hash of the multicast addresses. With more unicast addresses, or with `IFF_PROMISC`, the filter
+  passes all frames.
 
-The `dropped` count of `ip -s link` is not a count of lost frames. Neither MAC has an address
-filter. The network stack discards the frames of other stations and the frames of unknown
-protocols (for example PTP), and counts the latter in `dropped`. With LiteEth, the MAC counts the
+The `dropped` count of `ip -s link` is not a count of lost frames. LiteEth has no address filter:
+the network stack discards the frames of other stations. It also discards the frames of unknown
+protocols (for example PTP without ptp4l), and counts them in `dropped`. With LiteEth, the MAC counts the
 frames that it drops for lack of a free slot in the CSR `ethmac_sram_writer_errors`. Linux does not
 read it.
 
@@ -262,6 +293,49 @@ the reference SoC at 110 MHz, with `-t 15`.
   MD5.
 - An `ip link set eth0 down` and `up` with the MAC with DMA kept the receive buffers, and TCP worked
   after it.
+
+Results on a direct link **[measured, 2026-11-23]**. A cable connected the board to an Intel I211
+of the host. The SoC was the reference SoC of the build of 2026-11-23, loaded over JTAG. The host
+ran iperf3 as the client, with `-R` for the direction out of the board.
+
+- 100 Mbit/s full duplex: TCP 91.3 and 92.2 Mbit/s into the board, and 93.4 out, each for 15 s.
+  32 MiB of random data went to the board and back through SSH with the same MD5.
+- UDP into the board at 95.8 Mbit/s lost 71% to 82% of the datagrams in the socket buffer
+  (`RcvbufErrors`); the engine dropped none. iperf3 on the board is the limit.
+- 10 Mbit/s full duplex (the host advertised only 10baseT/Full): TCP 9.33 Mbit/s in each direction,
+  and 100 of 100 pings with 0 to 1472 bytes of data.
+- When the host took its link down and up, the driver showed the link down and then up again.
+- When the host turned off autonegotiation, the PHY found a link by parallel detection, without
+  full duplex. The driver kept the carrier off and showed a warning.
+- Filter: 50 frames to another unicast address and 50 frames to a multicast group that the board
+  had not joined were each counted in `rx_filtered`. After `ip maddr add` of the group, and with
+  `ip link set eth0 promisc on` for the unicast frames, the frames came in.
+- PTP: the host ran `ptp4l -i enp5s0 -2` as the master, with the stamps of the I211. The board ran
+  `ptp4l -i eth0 -2 -s`. Both used 4 Sync and 4 Delay_Req messages each second. The kernel had the
+  latency correction of the PHY and the timer for the TX stamps. The table gives the summaries of
+  ptp4l of each second after the first third of the run.
+
+| Link | Run | Offset rms, median of the seconds | Largest offset | Path delay | Frequency of the board |
+|---|---|---|---|---|---|
+| 100 Mbit/s | 120 s | 38 ns | 167 ns | 72 to 93 ns (median deviation in a second 2 ns) | -70.00 to -69.60 ppm |
+| 10 Mbit/s | 120 s | 124 ns | 417 ns | 345 to 620 ns (17 ns) | -70.11 to -69.59 ppm |
+| 10 Mbit/s, TCP out at 9.43 Mbit/s | 300 s | 133 ns | 399 ns | 320 to 580 ns (16 ns) | -70.17 to -69.57 ppm |
+
+- The run with TCP used `--tx_timestamp_timeout 100`. With the 10 ms of the `ptp4l.conf` of
+  Debian, ptp4l stopped 13 times in 300 s: "timed out while polling for tx timestamp". A
+  Delay_Req waits behind the TCP frames that the driver already gave to the engine. The stamp is
+  the time of the SFD, so the wait does not change it.
+- A script on the board sent 200 frames with a request for a TX stamp, one each 50 ms. The stamp
+  came back after a median of 0.59 ms, and a maximum of 1.44 ms, at 100 and at 10 Mbit/s. With 10
+  Mbit/s and TCP out, the median was 60 ms and the maximum 106 ms.
+- The path delay was 115 ns shorter at 100 Mbit/s, and about 420 ns shorter at 10 Mbit/s, than
+  without the latency correction (192 and 901 ns). The correction is 115 and 450 ns. The rest of
+  the path delay is the cable and the errors of the two ends. The board cannot separate them.
+- The frequency changed by about 0.4 ppm in some minutes. Thus the drift of the oscillators, and
+  not the stamps, sets most of the offset. The frequency is that of the oscillator of the board
+  against the oscillator of the I211, a result for these two parts.
+- No TX stamp was lost.
+- 100 Mbit/s with this kernel: TCP 92.3 Mbit/s into the board and 94.2 out, each for 15 s.
 
 ### SD card
 

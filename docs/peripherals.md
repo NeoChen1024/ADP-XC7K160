@@ -4,7 +4,7 @@ The pins are in `pins.csv` and `adp_xc7k160_master.xdc`. Find them by the start 
 
 | Peripheral | Part or connector | Signal prefix | Bank | Status |
 |---|---|---|---|---|
-| 10/100 Ethernet (MII) | U9 DM9161C, `RJ45_CON2`, 25 MHz crystal | `MAC_`, `PHY_PWRDWN` | 12 | Works: [ethernet.md](ethernet.md) |
+| 10/100 Ethernet (MII) | U9 DM9161CEP, `RJ45_CON2`, 25 MHz crystal | `MAC_`, `PHY_PWRDWN` | 12 | Works: [ethernet.md](ethernet.md) |
 | Gigabit Ethernet (GMII), **optional** | U12 88E1119R, `RJ45_CON1` | `PHY_` | 34 (1.8 V) | Not fitted |
 | SD card | `SD_CON1`; `SD_PWR_ON` controls the power switch U31 | `SD_` | 13, 12 | Works: [sd-card.md](sd-card.md) |
 | Audio | U8 ALC203 (AC97), 24.576 MHz crystal | `AC97_` | 13 | Works: [audio.md](audio.md) |

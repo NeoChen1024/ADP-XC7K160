@@ -9,7 +9,7 @@ reference SoC has two NaxRiscv cores and runs Debian from the SD card. The Linux
 | `adp_xc7k160_platform.py` | The LiteX platform. It reads the pins and the I/O standards from `pins.csv`, by the signal names of the manual |
 | `adp_xc7k160_target.py` | The SoC: the CPU (VexRiscv by default), the BIOS, the UART, the 1 GiB DDR3 as main RAM, the buttons and the displays. As options: the LiteDRAM BIST, Etherbone or the MAC on the 10/100 Ethernet, the SD card, and the AC97 controller with DMA |
 | `adp_ac97.py` | The AC97 controller: the AC-link, the codec commands, and two DMA engines for playback and capture |
-| `adp_ethmac.py` | The Ethernet MAC with DMA: the MAC core of LiteEth with a DMA front end on an AXI4 master |
+| `adp_ethmac.py` | The MII PHY with a receive path aligned on the SFD, and the Ethernet MAC with DMA: the MAC core of LiteEth with a DMA front end on an AXI4 master, a PTP clock and an address filter |
 | `naxriscv_l1.scala` | Changes the L1 caches of NaxRiscv: their sizes, and the width of their refill buses (see "Size of the L1 caches" and "Refill buses and the system clock" below) |
 | `versions.sh` | Lists the URL and the commit of each repository of a LiteX installation |
 | `versions.txt` | The output of `versions.sh` for the installation that built the reference SoC |
@@ -105,9 +105,10 @@ python3 $A/litex/adp_xc7k160_target.py --build \
 - The 8 KiB default SRAM left less than 2 KiB for the stack of the BIOS. Thus the SRAM is 16 KiB.
 - The Ethernet MAC is the MAC with DMA ("Ethernet and the SD card"). The BIOS thus boots only from
   the SD card.
-- The build on 2026-11-22 was -2 at 110 MHz with Vivado 2025.2.1. The setup slack was +0.672 ns,
-  with 72,357 LUT, 49,249 FF and 285.5 block RAM tiles. The slack of the clock `ac97_bit_clk` was
-  +1.606 ns.
+- The build on 2026-11-23 was -2 at 110 MHz with Vivado 2025.2.1. The setup slack was +0.281 ns,
+  with 73,301 LUT, 50,477 FF and 288 block RAM tiles. That path is a reset path in sys
+  (`async_default`). The worst slack of the other paths of sys was +0.851 ns, of sys4x +0.874 ns,
+  and of the clock `ac97_bit_clk` +1.402 ns.
 
 ### Buses of NaxRiscv in LiteX
 
@@ -348,11 +349,36 @@ NaxRiscv. The CPU then does not copy the frames ([linux/README.md](linux/README.
 - 100 Mbit/s needs one 64-bit beat in 640 ns, which is 64 cycles at 100 MHz. Thus the engine makes
   one AXI transfer at a time, without bursts.
 - The CSRs keep the base address and the interrupt of the LiteEth MAC, so the other addresses of
-  the SoC do not move.
+  the SoC do not move. The CSRs of the PTP clock, the filter and the receive counters follow the
+  CSRs of the MAC core. Thus a driver for the earlier MAC still works.
+- PTP clock: seconds and nanoseconds, with an increment of nanoseconds and 32 fraction bits in each
+  cycle of sys. The driver changes the increment for the frequency, and can add a step of less than
+  one second in one write.
+- Stamps: the PHY toggles a bit at each SFD, in the clock of the MII. A synchronizer in sys4x
+  (440 MHz) finds the quarter of the sys cycle. Thus a stamp has a resolution of 2.27 ns.
+- The engine writes the stamp of each received frame after the frame in its buffer. A frame of
+  which the first descriptor asks for a stamp gives its stamp to a FIFO of 16 entries.
+- Filter: the station address, three more addresses, broadcast, and a hash of 64 bits for multicast
+  (bits 31-26 of `ether_crc_le()`). A frame that the filter refuses gets no completion, and keeps
+  its buffer for the next frame. After the reset the filter passes all frames.
 
-Before the first build, a testbench of migen simulated the front end with an AXI memory of random
-latency. It sent frames of 14 to 1600 bytes and pieces at random byte addresses, and all were
-correct. The testbench is not in this repository.
+`ADPEthPHYMII` replaces the receive path of `LiteEthPHYMII`. It waits for the nibble D of the SFD,
+and then makes the bytes. The PHY gives preambles of 13 or 14 nibbles at 10 Mbit/s, and the path of
+LiteEth lost frames at that speed ([docs/ethernet.md](../docs/ethernet.md)). The target uses
+`ADPEthPHYMII` for all Ethernet options. It counts the bursts without SFD, the preambles with a wrong
+nibble and the frames with half a byte at the end.
+
+Testbenches of migen simulated these parts before the build. They are not in this repository.
+
+- The front end with an AXI memory of random latency: frames of 4 to 1600 bytes, pieces at random
+  byte addresses, the stamp after each frame, the filter with each kind of address, and the stamp
+  request of the TX descriptors. All were correct, with three random seeds.
+- The receive path with preambles of 1 to 16 nibbles, bursts without SFD, wrong nibbles and frames
+  with half a byte at the end. All were correct, with three random seeds.
+- The stamps of 300 toggles at random times. Each stamp was within one cycle of sys4x of a constant
+  time after the toggle. The simulator of migen updates sys4x before sys at a common edge, but the
+  hardware does not. Thus sys4x changes the values that sys samples only between the edges of sys.
+  The result was the same with the edges of sys4x 1 unit late.
 
 The builds of 2026-11-22, -2 at 100 MHz, with the other options of the reference SoC, but with
 refill buses of 64 bits:

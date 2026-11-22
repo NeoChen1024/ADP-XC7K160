@@ -25,7 +25,7 @@ notes = {
     "D5": "measured: 100 MHz, through an IBUFDS_GTE2 into a BUFG, with no GTX channel in the design",
     "M25": "pulled up on the board; U16 answers at 0x50",
     "L25": "pulled up on the board; U16 answers at 0x50",
-    "AF22": "follows the FPGA's weak pull: the PHY does not drive it",
+    "AF22": "U9.32 is MDINTR, the interrupt output of the PHY (DM9161C datasheet); masked after reset, it follows the FPGA's weak pull. Also a strap: with a pull-down the interrupt is active high, with a pull-up active low",
     "Y20": "low: the PHY runs",
     "U22": "from U19, a G692L293T: high, low while HW_RST_SW1 is held. Only an input: the button does not reconfigure the FPGA, and does not reset the Ethernet PHY",
     "U21": "from U18, a G692L293T (2.93 V, 140 to 520 ms) with the FPGA's DONE on its manual reset (U18.3): low until about 385 ms after every configuration of the FPGA, and for 0.4 s after a dip of the 3.3 V. The Ethernet PHY leaves its reset with it; neither HW_RST_SW1 nor PWR_SW1 moves it",
@@ -76,6 +76,8 @@ for r in manual:
         board.add(p)
     if s in ("MAC_RXD0", "MAC_RXD1", "MAC_RXD2", "MAC_RXD3", "MAC_CRS", "MAC_COL", "MAC_RX_DV", "MAC_RX_ER", "MAC_TX_CLK"):
         notes[p] = "also a strap of the PHY, read after every load of the FPGA: no PULLUP on it"
+    if s == "MAC_RX_CLK":
+        notes[p] = "also a strap of the PHY, read after every load of the FPGA: a pull-down selects GPSI at 10 Mbit/s"
     if s.startswith("PHY_") and s != "PHY_PWRDWN":
         notes[p] = "U12 is not fitted" + ("; pulled up on the board" if s == "PHY_MDIO" else "")
     if r["pcb_symbol"] in ("U5", "U6"):

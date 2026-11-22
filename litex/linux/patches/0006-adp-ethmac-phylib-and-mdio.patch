@@ -1,0 +1,18 @@
+From: ADP-XC7K160 board notes
+Subject: [PATCH] net: adp-ethmac: phylib and the bit-banged MDIO bus
+
+The driver reads the link state of the PHY through phylib. The MDIO bus of
+the SoC is the bit-banged MDIO of LiteEth: two CSRs for MDC, the direction and
+the data.
+
+--- a/drivers/net/ethernet/litex/Kconfig
++++ b/drivers/net/ethernet/litex/Kconfig
+@@ -28,6 +28,8 @@
+ config ADP_ETHMAC
+ 	tristate "ADP-XC7K160 Ethernet MAC with DMA"
+ 	depends on OF && HAS_IOMEM && HAS_DMA
++	select PHYLIB
++	select MDIO_BITBANG
+ 	help
+ 	  The Ethernet MAC with DMA of the LiteX SoC of the Andes ADP-XC7K160
+ 	  board: the MAC core of LiteEth with a DMA front end on the coherent
