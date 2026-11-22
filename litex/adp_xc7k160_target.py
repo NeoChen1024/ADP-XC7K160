@@ -175,6 +175,17 @@ class BaseSoC(SoCCore):
             # K26 is not clock capable: the clock goes from the IBUF to the BUFG on general routing.
             platform.add_platform_command("set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets ac97_bit_clk_IBUF]")
 
+        # naxriscv_l1.scala can change the L1 sizes of NaxRiscv, but LiteX writes the sizes of its
+        # gen.scala into the constants of the DTS. Write the sizes of the same scala-args instead.
+        if self.cpu_type == "naxriscv":
+            from litex.soc.cores.cpu.naxriscv import NaxRiscv
+            nax_args = dict(kv.split("=") for a in NaxRiscv.scala_args for kv in a.split(","))
+            for cache in ("icache", "dcache"):
+                for key, config in (("bytes", "SIZE"), ("ways", "WAYS")):
+                    if f"{cache}-{key}" in nax_args:
+                        self.add_config(f"CPU_{cache.upper()}_{config}", int(nax_args[f"{cache}-{key}"]),
+                            check_duplicate=False)
+
         # LiteDRAM, unlike MIG (docs/ddr3.md), does not use the only XADC of the device.
         self.xadc = S7SystemMonitor()
 

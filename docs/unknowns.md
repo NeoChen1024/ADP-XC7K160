@@ -23,5 +23,7 @@ Other items:
 - The data lines of the LCD, IDE/CF, AICE, trace and PCIe were not used.
 - AC97 in Linux: only playback and the capture of `Mix` were tested, at 48 kHz. The line input and
   the microphone input were not tested.
+- The branch misses of NaxRiscv: its event 4 does not count them
+  ([litex/linux/README.md](../litex/linux/README.md)), so their share of the time is not known.
 - Ethernet in Linux: the patch of `liteeth` ran for less than one hour. With traffic in both
   directions, the MAC dropped some frames with 8 RX slots.

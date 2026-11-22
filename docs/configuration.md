@@ -43,12 +43,12 @@ version of this text gave `28f00am29ew-bbp-x16`, which was wrong. Pins: `FCS_B` 
   `.bit` file. The bits in each byte are reversed, and then each pair of bytes is swapped.
 
 The contents of U4 **[measured]**. The factory contents were read completely on 2026-11-20, and two
-reads agreed. The writes of 2026-11-21 changed only the start of the lower half:
+reads agreed. The writes of 2026-11-21 and 2026-11-22 changed only the start of the lower half:
 
 | Location | Contents |
 |---|---|
-| `0x0000000–0x046D9C7` | The LiteX SoC of [litex/linux/README.md](../litex/linux/README.md): two NaxRiscv cores, Debian from the SD card |
-| `0x0480000–0x04BFFFF` | The end of an earlier LiteX bitstream. Alone it is not a bitstream |
+| `0x0000000–0x040404F` | The LiteX SoC of [litex/linux/README.md](../litex/linux/README.md): two NaxRiscv cores, Debian from the SD card |
+| `0x0420000–0x04BFFFF` | The ends of two earlier LiteX bitstreams. Alone they are not bitstreams |
 | `0x04C0000–0x0680000` | The end of the factory bitstream. Alone it is not a bitstream |
 | `0x4000000–0x40A0000` | Andes boot monitor (factory) |
 | `0x4100000–0x4120000` | `U-Boot 2010.12-rc1 (Jul 22 2011 - 16:10:26)` (factory) |
@@ -91,9 +91,9 @@ VIVADO=... XVCD=... sh jtag/flash_u4.sh design.bit
 - If the write fails, the FPGA does not configure at power-on. JTAG still works, so `load.sh` and a
   new write still work.
 
-Result **[measured, 2026-11-21]**: three writes passed the erase, the write and the verify. Through
-xvc-pico, each complete run took 109 to 130 seconds. After PROGRAM_B, DONE was 1, and the SoC
-booted. After a power cycle, the FPGA loaded the SoC from U4.
+Result **[measured, 2026-11-21 and 2026-11-22]**: four writes passed the erase, the write and the
+verify. Through xvc-pico, each complete run took 109 to 130 seconds. After PROGRAM_B, DONE was 1,
+and the SoC booted. After a power cycle, the FPGA loaded the SoC from U4.
 
 To restore the factory design, convert the first `0x680000` bytes of the backup to the byte order of
 a `.bit` file (see above). Then write them at address 0, for example with `write_cfgmem -loaddata`.

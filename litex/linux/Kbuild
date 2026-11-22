@@ -1,5 +1,0 @@
-# Kbuild for the out-of-tree modules of the NaxRiscv SoC. Build them in a copy, outside the repository:
-#   make -C /path/to/linux-build M=/path/to/copy ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- modules
-# adp-seven-seg needs line-display.h, which is in drivers/auxdisplay of the kernel source.
-obj-m := litex-xadc-hwmon.o adp-seven-seg.o adp-ac97.o
-ccflags-y += -I$(srctree)/drivers/auxdisplay

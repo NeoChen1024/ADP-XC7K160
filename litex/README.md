@@ -9,6 +9,7 @@ SoC that is now in U4 has two NaxRiscv cores and runs Debian from the SD card. T
 | `adp_xc7k160_platform.py` | The LiteX platform. It reads the pins and the I/O standards from `pins.csv`, by the signal names of the manual |
 | `adp_xc7k160_target.py` | The SoC: the CPU (VexRiscv by default), the BIOS, the UART, the 1 GiB DDR3 as main RAM, the buttons and the displays. As options: the LiteDRAM BIST, Etherbone or the MAC on the 10/100 Ethernet, the SD card, and the AC97 controller with DMA |
 | `adp_ac97.py` | The AC97 controller: the AC-link, the codec commands, and two DMA engines for playback and capture |
+| `naxriscv_l1.scala` | Changes the L1 cache sizes of NaxRiscv (see "Size of the L1 caches" below) |
 | `versions.sh` | Lists the URL and the commit of each repository of a LiteX installation |
 | `versions.txt` | The output of `versions.sh` for the installation that built the SoC in U4 |
 | `tftpd.py` | A TFTP server that only reads, for the network boot of the BIOS |
@@ -75,7 +76,7 @@ locally administered address of the workbench.
 
 ## The SoC in U4
 
-The SoC in U4 (written on 2026-11-21) was built with these options:
+The SoC in U4 (written on 2026-11-22) was built with these options:
 
 ```sh
 export JAVA_HOME=/path/to/java-17-openjdk PATH=/path/to/sbt/bin:$PATH
@@ -83,18 +84,21 @@ python3 $A/litex/adp_xc7k160_target.py --build \
     --cpu-type naxriscv --xlen 64 --with-fpu --with-rvc --with-coherent-dma --cpu-count 2 \
     --l2-bytes 524288 --l2-ways 8 --integrated-sram-size 0x4000 --sys-clk-freq 100e6 \
     --with-ethernet --eth-ip A.B.C.D --remote-ip E.F.G.H --tftp-port 6069 \
-    --with-sdcard-write --with-ac97 --soc-json csr.json
+    --with-sdcard-write --with-ac97 --soc-json csr.json \
+    --scala-file gen.scala --scala-file $A/litex/naxriscv_l1.scala \
+    --scala-args icache-bytes=32768,icache-ways=8,dcache-bytes=32768,dcache-ways=8
 ```
 
 - NaxRiscv is an out-of-order RV64GC core of SpinalHDL. The build needs JDK 17 and sbt, in addition
   to LiteX. At the first build, LiteX clones NaxRiscv `9f452d5` with SpinalHDL `c362657` into its
   `pythondata-cpu-naxriscv` package. sbt then makes the Verilog of the core.
-- Each core has 16 KiB of L1 instruction cache and 16 KiB of L1 data cache. The cores share one
-  coherent L2 cache of 512 KiB in front of LiteDRAM (`NaxSoc.scala` of NaxRiscv).
+- Each core has 32 KiB of L1 instruction cache and 32 KiB of L1 data cache, each with 8 ways
+  (`naxriscv_l1.scala`). The cores share one coherent L2 cache of 512 KiB in front of LiteDRAM
+  (`NaxSoc.scala` of NaxRiscv).
 - The CPU runs at the system clock, 100 MHz. Thus the DDR3 runs at DDR3-800.
 - The 8 KiB default SRAM left less than 2 KiB for the stack of the BIOS. Thus the SRAM is 16 KiB.
-- The build was -2 at 100 MHz with Vivado 2025.2.1. The setup slack was +0.751 ns, with 62,166 LUT,
-  43,058 FF and 208.5 block RAM tiles. The slack of the clock `ac97_bit_clk` was +1.606 ns.
+- The build was -2 at 100 MHz with Vivado 2025.2.1. The setup slack was +0.285 ns, with 64,747 LUT,
+  44,798 FF and 224.5 block RAM tiles. The slack of the clock `ac97_bit_clk` was +1.621 ns.
 
 ### Buses of NaxRiscv in LiteX
 
@@ -138,6 +142,45 @@ dictionary of 4 MiB).
 - A block of 256 KiB fits in the larger L2 only, and its read speed increased by 45%.
 - Blocks of 1 MiB and more come from the DDR3 with both sizes, at about 195 MiB/s.
 - The 7z rating increased by 5% for one thread and by 2% for two threads.
+
+### Size of the L1 caches
+
+`naxriscv_l1.scala` changes the L1 caches of NaxRiscv. Give it after the `gen.scala` of LiteX, with
+the sizes as `--scala-args`:
+
+```sh
+--scala-file gen.scala --scala-file $A/litex/naxriscv_l1.scala \
+--scala-args icache-bytes=32768,icache-ways=8,dcache-bytes=32768,dcache-ways=8
+```
+
+Each way stays at 4 KiB, the page size, because the caches are indexed with the virtual address.
+The target then writes the same sizes into the DTS.
+
+The SoC in U4 has 32 KiB and 8 ways for both caches. The comparison is a build with the default
+caches (16 KiB, 4 ways) and the same other options, made on 2026-11-21. Its setup slack was
++0.751 ns, with 62,166 LUT, 43,058 FF and 208.5 block RAM tiles. Thus the larger caches use 2,581
+more LUT and 16 more block RAM tiles.
+
+Results **[measured, 2026-11-22]**. The same kernel and Debian ran on both SoCs after a JTAG load.
+`perf stat` counted each workload, with no other workload on the board
+([linux/README.md](linux/README.md)).
+MPKI is the number of refills for each 1000 instructions.
+
+| Workload | Time, 16 KiB | Time, 32 KiB | IPC | I$ MPKI | D$ MPKI |
+|---|---|---|---|---|---|
+| `7z a -mx5`, 4 MiB | 67.2 s | 61.3 s (−8.8%) | 0.84 → 0.91 | 1.80 → 0.99 | 13.4 → 9.8 |
+| `7z t`, 4 times | 9.85 s | 9.52 s (−3.3%) | 0.94 → 0.97 | 2.26 → 1.12 | 4.18 → 3.02 |
+| `xz -dc`, 4 times | 10.5 s | 9.97 s (−5.3%) | 0.96 → 1.00 | 3.02 → 1.71 | 4.69 → 3.46 |
+| `sha256sum`, 16 MiB | 7.02 s | 6.87 s (−2.1%) | 1.74 → 1.77 | 1.05 → 0.71 | 1.95 → 1.43 |
+| `gcc -O2`, two C files | 72.6 s | 55.1 s | 0.53 → 0.59 | 25.7 → 17.5 | 16.2 → 10.7 |
+| Perl, regexes and hashes | 33.8 s | 21.1 s (−37.7%) | 0.54 → 0.84 | 38.5 → 8.5 | 10.3 → 2.8 |
+
+- The counters include the kernel and all processes. In the gcc runs the instruction count was
+  16% different, so the time of gcc is not a good comparison. Its IPC increased by 11%.
+- Code with a large footprint gains most: the Perl interpreter had 78% fewer I$ refills.
+- A pointer chase gave 3.1 cycles for an L1 hit and about 28.5 cycles for an L2 hit with both
+  SoCs. The 32 KiB D$ moved the step from 16 KiB to 32 KiB of data.
+- A branch that the predictor misses costs about 14.6 cycles (a loop on random data).
 
 ### Power estimate
 

@@ -1,0 +1,92 @@
+From: ADP-XC7K160 board notes
+Subject: [PATCH] Kconfig and Makefile entries for the ADP-XC7K160 drivers
+
+The drivers of the LiteX SoC of the ADP-XC7K160 can be built into the
+kernel: the seven-segment digits, the XADC and the AC97 controller.
+prepare-kernel.sh of the board notes copies their sources into the tree.
+
+diff -ruN a/drivers/auxdisplay/Kconfig b/drivers/auxdisplay/Kconfig
+--- a/drivers/auxdisplay/Kconfig	2026-11-22 00:23:22.189604631 +0800
++++ b/drivers/auxdisplay/Kconfig	2026-11-22 00:23:22.226271989 +0800
+@@ -523,6 +523,15 @@
+ 	  This driver supports a generic 7-segment LED display made up
+ 	  of GPIO pins connected to the individual segments.
+ 
++config ADP_SEVEN_SEG
++	tristate "ADP-XC7K160 seven-segment digits"
++	depends on OF && HAS_IOMEM && LEDS_CLASS
++	select LINEDISP
++	help
++	  The two seven-segment digits of the Andes ADP-XC7K160 board with
++	  its LiteX SoC: a line display of two characters, and the two
++	  decimal points as LEDs.
++
+ 	  This driver can also be built as a module. If so, the module
+ 	  will be called seg-led-gpio.
+ 
+diff -ruN a/drivers/auxdisplay/Makefile b/drivers/auxdisplay/Makefile
+--- a/drivers/auxdisplay/Makefile	2026-11-22 00:23:22.196271423 +0800
++++ b/drivers/auxdisplay/Makefile	2026-11-22 00:23:22.226271989 +0800
+@@ -16,3 +16,4 @@
+ obj-$(CONFIG_MAX6959)		+= max6959.o
+ obj-$(CONFIG_PARPORT_PANEL)	+= panel.o
+ obj-$(CONFIG_SEG_LED_GPIO)	+= seg-led-gpio.o
++obj-$(CONFIG_ADP_SEVEN_SEG)	+= adp-seven-seg.o
+diff -ruN a/drivers/hwmon/Kconfig b/drivers/hwmon/Kconfig
+--- a/drivers/hwmon/Kconfig	2026-11-22 00:23:22.199604819 +0800
++++ b/drivers/hwmon/Kconfig	2026-11-22 00:23:22.229605385 +0800
+@@ -1168,6 +1168,13 @@
+ 	  This driver can also be built as a module. If so, the module will
+ 	  be called ltc4282.
+ 
++config SENSORS_LITEX_XADC
++	tristate "LiteX XADC"
++	depends on OF && HAS_IOMEM
++	help
++	  The temperature and the supply voltages of the XADC of a 7-series
++	  FPGA, through the CSRs of the S7SystemMonitor of LiteX.
++
+ config SENSORS_LTQ_CPUTEMP
+ 	bool "Lantiq cpu temperature sensor driver"
+ 	depends on SOC_XWAY
+diff -ruN a/drivers/hwmon/Makefile b/drivers/hwmon/Makefile
+--- a/drivers/hwmon/Makefile	2026-11-22 00:23:22.202938215 +0800
++++ b/drivers/hwmon/Makefile	2026-11-22 00:23:22.229605385 +0800
+@@ -147,6 +147,7 @@
+ obj-$(CONFIG_SENSORS_LTC4260)	+= ltc4260.o
+ obj-$(CONFIG_SENSORS_LTC4261)	+= ltc4261.o
+ obj-$(CONFIG_SENSORS_LTC4282)	+= ltc4282.o
++obj-$(CONFIG_SENSORS_LITEX_XADC) += litex-xadc-hwmon.o
+ obj-$(CONFIG_SENSORS_LTQ_CPUTEMP) += ltq-cputemp.o
+ obj-$(CONFIG_SENSORS_MAX1111)	+= max1111.o
+ obj-$(CONFIG_SENSORS_MAX127)	+= max127.o
+diff -ruN a/sound/drivers/Kconfig b/sound/drivers/Kconfig
+--- a/sound/drivers/Kconfig	2026-11-22 00:23:22.209605008 +0800
++++ b/sound/drivers/Kconfig	2026-11-22 00:23:22.229605385 +0800
+@@ -76,6 +76,15 @@
+ 	  Say M if you don't.
+ 	  Say Y only if you really know what you do.
+ 
++config SND_ADP_AC97
++	tristate "ADP-XC7K160 AC97 controller"
++	depends on OF && HAS_IOMEM && HAS_DMA
++	select SND_PCM
++	select SND_AC97_CODEC
++	help
++	  The AC97 controller with DMA of the LiteX SoC of the Andes
++	  ADP-XC7K160 board, with its ALC203 codec.
++
+ config SND_DUMMY
+ 	tristate "Dummy (/dev/null) soundcard"
+ 	select SND_PCM
+diff -ruN a/sound/drivers/Makefile b/sound/drivers/Makefile
+--- a/sound/drivers/Makefile	2026-11-22 00:23:22.212938404 +0800
++++ b/sound/drivers/Makefile	2026-11-22 00:23:22.229605385 +0800
+@@ -15,6 +15,7 @@
+ snd-virmidi-y := virmidi.o
+ 
+ # Toplevel Module Dependency
++obj-$(CONFIG_SND_ADP_AC97) += adp-ac97.o
+ obj-$(CONFIG_SND_DUMMY) += snd-dummy.o
+ obj-$(CONFIG_SND_ALOOP) += snd-aloop.o
+ obj-$(CONFIG_SND_VIRMIDI) += snd-virmidi.o

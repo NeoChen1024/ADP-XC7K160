@@ -6,8 +6,9 @@
 #
 # Run it with the Python of the LiteX installation. It runs litex_json2dts_linux, replaces the
 # bootargs (the generator gives a static ip= and an ext4 root), and adds the nodes that the
-# generator does not know: the two seven-segment digits (adp-seven-seg.c) and the AC97
-# controller (adp-ac97.c). The AC97 driver has fixed CSR offsets; this script checks them.
+# generator does not know: the two seven-segment digits (adp-seven-seg.c), the AC97 controller
+# (adp-ac97.c), and the PMU events of NaxRiscv. The AC97 driver has fixed CSR offsets; this script
+# checks them.
 
 import argparse
 import json
@@ -55,6 +56,25 @@ AC97 = """
 }};
 """
 
+# The hardware events of NaxRiscv (PerformanceCounterService in its Service.scala): 1 I$ refill,
+# 2 D$ refill, 3 D$ writeback, 4 branch miss. mhpmcounter3 to 6 (mask 0x78) can count each of them.
+# OpenSBI reads this node. Cycles and instructions must be mapped to mcycle and minstret, or perf
+# does not count them. "perf stat -e branch-misses" uses event 4, and "r1" to "r7" are raw events.
+# The raw mask must not be 0: OpenSBI then takes the raw row as an overlap of the other rows.
+PMU = """
+/ {
+    pmu {
+        compatible = "riscv,pmu";
+        riscv,event-to-mhpmevent = <0x00006 0x0 0x4>;
+        riscv,event-to-mhpmcounters = <0x00001 0x00001 0x01>,
+                                      <0x00002 0x00002 0x04>,
+                                      <0x00006 0x00006 0x78>;
+        riscv,raw-event-to-mhpmcounters = <0x0 0x0 0xffffffff 0xfffffff8 0x78>;
+    };
+};
+"""
+
+
 # The CSR offsets that adp-ac97.c uses.
 AC97_OFFSETS = {
     "ctrl": 0x00, "cmd": 0x04, "cmd_go": 0x08, "status": 0x0c, "reply": 0x10,
@@ -96,6 +116,8 @@ def main():
     bases = csr["csr_bases"]
     if "ac97" in bases:
         dts += ac97_node(csr)
+    if "config_cpu_type_naxriscv" in csr["constants"]:
+        dts += PMU
     if "seven_seg" in bases:
         dts += SEVEN_SEG.format(base=bases["seven_seg"], left=args.dp_left_trigger,
                                 right=args.dp_right_trigger)

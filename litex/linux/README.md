@@ -8,7 +8,7 @@ XADC, the seven-segment digits and the AC97 codec. The software is built outside
 |---|---|
 | `adp.config` | The kernel config fragment |
 | `patches/` | Patches for the kernel source |
-| `Kbuild` | Builds the three out-of-tree modules below |
+| `prepare-kernel.sh` | Applies `patches/` to a kernel source tree, and copies the three drivers below into it |
 | `litex-xadc-hwmon.c` | hwmon driver for the XADC CSRs |
 | `adp-seven-seg.c` | The two seven-segment digits as a line display and two LEDs |
 | `adp-ac97.c` | ALSA driver for the AC97 controller |
@@ -45,15 +45,15 @@ in `r1`, OpenSBI stops without output. Do not use the defaults of LiteX: they pu
   FW_JUMP_ADDR=0x41000000 FW_JUMP_FDT_ADDR=0x46000000`. Its console is the LiteX UART, through the
   DTB.
 - **Kernel** 6.18.64, with `riscv64-linux-gnu-gcc` 16.2.1:
-  1. Apply each file of `patches/` with `patch -p1`.
+  1. Give `sh prepare-kernel.sh /path/to/linux`. It applies `patches/`, and copies the three
+     drivers into the tree. `patches/0002` gives them the options `ADP_SEVEN_SEG`,
+     `SENSORS_LITEX_XADC` and `SND_ADP_AC97`.
   2. Merge `adp.config` over the defconfig. The start of `adp.config` gives the commands. The
      kernel version is then `6.18.64-adp`.
   3. Build the `Image` and the modules.
-- **Out-of-tree modules**: copy `Kbuild` and the three `.c` drivers to a directory outside the
-  repository. Then give `make -C /path/to/linux-build M=/path/to/copy ARCH=riscv
-  CROSS_COMPILE=riscv64-linux-gnu- modules`. Install the `.ko` files in
-  `/lib/modules/6.18.64-adp/updates/` and give `depmod -a`. udev loads each module at boot, from the
-  compatible of its node.
+- The drivers of the board are built into the kernel, so that they work before the root file
+  system is mounted. So are `configfs`, `nls_iso8859_1`, the line display core and
+  `snd-ac97-codec`.
 - **DTB**: `python3 mkdts.py csr.json > linux.dts && dtc -O dtb -o linux.dtb linux.dts`, with the
   Python of the LiteX installation. `mkdts.py` runs `litex_json2dts_linux`, replaces the bootargs,
   and adds the nodes of the seven-segment digits and of the AC97 controller.
@@ -155,7 +155,7 @@ maps ASCII to seven segments.
   default the left point has the trigger `mmc0` (the SD card) and the right point has `heartbeat`.
 - `mkdts.py` adds the node, with the compatible `adp-xc7k160,seven-seg`.
 - The kernel needs the LED class, the LED triggers and the line display core. `adp.config` sets
-  them; `LINEDISP` has no prompt, so `SEG_LED_GPIO=m` selects it.
+  the first two; `ADP_SEVEN_SEG` selects `LINEDISP`, which has no prompt.
 - `adp-7seg-temp.c` shows the FPGA temperature of the XADC on the digits. It keeps the two sysfs
   files open, writes only a changed value, and does not fork. Build it with
   `riscv64-linux-gnu-gcc -O2 -static`, and install it as `/usr/local/sbin/adp-7seg-temp`.
@@ -170,7 +170,7 @@ accesses to the SD card. The tool used 552 KiB of memory (RSS).
 `adp-ac97.c` (GPL-2.0 or MIT) is an ALSA driver with one PCM device: playback and capture, 48 kHz,
 S16_LE, two channels. `snd-ac97-codec` gives the mixer of the codec.
 
-- `adp.config` sets `SND_SOC_AC97_CODEC=m`, which selects `SND_AC97_CODEC`.
+- `SND_ADP_AC97` selects `SND_AC97_CODEC`, which has no prompt.
 - `mkdts.py` adds the node, with the compatible `adp-xc7k160,ac97`. The driver uses fixed CSR
   offsets. `mkdts.py` compares them with `csr.json` and stops if they differ.
 
@@ -214,6 +214,36 @@ Results **[measured, 2026-11-21]**, with the patch and 8 RX slots:
   not change.
 - During transfers in both directions at the same time, with the AC97 test, the MAC dropped 13
   frames. The transfers completed.
+
+## Performance counters
+
+NaxRiscv has `mcycle`, `minstret` and four event counters, `mhpmcounter3` to 6. Its events
+(`PerformanceCounterService` in `Service.scala` of NaxRiscv):
+
+| Event | Meaning |
+|---|---|
+| 1 | I$ refill |
+| 2 | D$ refill |
+| 3 | D$ writeback |
+| 4 | Branch miss |
+
+OpenSBI gives the counters to Linux only through a `riscv,pmu` node in the DTB. `mkdts.py` adds it
+for a NaxRiscv SoC. Then `perf` (Debian package `linux-perf`) counts them:
+
+```sh
+perf stat -e cycles,instructions,r1,r2 -- command
+```
+
+Limits **[measured, 2026-11-22]**:
+
+- `cycles` and `instructions` work only if the node maps them to `mcycle` and `minstret`.
+- The raw row of the node must have a mask that is not 0. With a mask of 0, OpenSBI takes the row
+  as an overlap of the other rows and drops it.
+- Event 4 (`branch-misses` or `r4`) always gave 0, also for a loop that misses half of its branches.
+  Its signal in NaxRiscv is not the one that branch misses use.
+- Event 3 always gave almost the same count as event 2. It is not a count of dirty lines.
+- NaxRiscv has no Sscofpmf. The counters cannot separate user and kernel, and `perf record` does not
+  work. A count includes the kernel and all processes.
 
 ## Results
 
