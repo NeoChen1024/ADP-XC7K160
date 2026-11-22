@@ -25,5 +25,6 @@ Other items:
   the microphone input were not tested.
 - The branch misses of NaxRiscv: its event 4 does not count them
   ([litex/linux/README.md](../litex/linux/README.md)), so their share of the time is not known.
-- Ethernet in Linux: the patch of `liteeth` ran for less than one hour. With traffic in both
-  directions, the MAC dropped some frames with 8 RX slots.
+- Ethernet in Linux: the patches of `liteeth` and the MAC with DMA ran for less than one day. With
+  TCP in both directions at the same time, the MAC with DMA dropped frames when the poll was late
+  ([litex/linux/README.md](../litex/linux/README.md)).

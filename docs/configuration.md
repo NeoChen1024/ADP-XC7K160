@@ -42,24 +42,20 @@ version of this text gave `28f00am29ew-bbp-x16`, which was wrong. Pins: `FCS_B` 
 - Byte order of a flash file: `99 55 66 AA` in the flash image is the sync word `AA 99 55 66` of a
   `.bit` file. The bits in each byte are reversed, and then each pair of bytes is swapped.
 
-The contents of U4 **[measured]**. The factory contents were read completely on 2026-11-20, and two
-reads agreed. The writes of 2026-11-21 and 2026-11-22 changed only the start of the lower half:
+The factory contents of U4 **[measured]**. They were read completely on 2026-11-20, and two reads
+agreed:
 
 | Location | Contents |
 |---|---|
-| `0x0000000–0x040404F` | The LiteX SoC of [litex/linux/README.md](../litex/linux/README.md): two NaxRiscv cores, Debian from the SD card |
-| `0x0420000–0x04BFFFF` | The ends of two earlier LiteX bitstreams. Alone they are not bitstreams |
-| `0x04C0000–0x0680000` | The end of the factory bitstream. Alone it is not a bitstream |
-| `0x4000000–0x40A0000` | Andes boot monitor (factory) |
-| `0x4100000–0x4120000` | `U-Boot 2010.12-rc1 (Jul 22 2011 - 16:10:26)` (factory) |
-| `0x4400000–0x4D80000` | A compressed image with its decompressor (factory) |
-| `0x5600000`, `0x5F00000` | One 128 KiB block each, with no text (factory) |
+| `0x0000000–0x0680000` | The factory bitstream: a design of Andes with a core older than their RISC-V cores |
+| `0x4000000–0x40A0000` | Andes boot monitor |
+| `0x4100000–0x4120000` | `U-Boot 2010.12-rc1 (Jul 22 2011 - 16:10:26)` |
+| `0x4400000–0x4D80000` | A compressed image with its decompressor |
+| `0x5600000`, `0x5F00000` | One 128 KiB block each, with no text |
 | The remainder | Blank (`FF`) |
 
-The upper half was not read again after the writes. The factory bitstream was at
-`0x0000000–0x0680000`, the factory design of Andes with a core older than their RISC-V cores. The
-DVD that came with the board (AndeSight and the BSP) does not contain these images. The backup of
-the owner is the only copy.
+The DVD that came with the board (AndeSight and the BSP) does not contain these images. Read a
+backup of U4 before the first write: it is then the only copy.
 
 ## Read U4
 

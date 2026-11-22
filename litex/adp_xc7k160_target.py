@@ -21,6 +21,10 @@
 # if no other boot medium works; --tftp-port moves its server from port 69, so that a user can run
 # it. --with-etherbone and --with-ethernet exclude each other.
 #
+# --with-ethernet-dma, with --with-ethernet, puts the MAC of adp_ethmac.py in place of the slot
+# memory of LiteEth: the frames go between the MAC and the main RAM through the coherent DMA bus of
+# NaxRiscv. The Linux driver is litex/linux/adp-ethmac.c. The BIOS then has no network boot.
+#
 # --with-ac97 adds the AC97 controller of adp_ac97.py: playback and capture at 48 kHz through two DMA
 # engines, and the codec registers. The Linux driver is litex/linux/adp-ac97.c.
 #
@@ -91,7 +95,7 @@ class _CRG(LiteXModule):
 class BaseSoC(SoCCore):
     def __init__(self, sys_clk_freq=175e6, speedgrade=-2, with_bist=False,
         with_etherbone=False, with_ethernet=False, eth_ip=None, remote_ip=None, tftp_port=69,
-        with_sdcard=False, with_sdcard_write=False, with_ac97=False, **kwargs):
+        with_sdcard=False, with_sdcard_write=False, with_ac97=False, with_ethernet_dma=False, **kwargs):
         platform = adp_xc7k160_platform.Platform(speedgrade=speedgrade)
 
         with_dram = not kwargs.get("integrated_main_ram_size")
@@ -144,11 +148,23 @@ class BaseSoC(SoCCore):
             # tools of LiteX do not split a write. 255 is the largest count that a record can hold.
             self.add_etherbone(phy=self.ethphy, ip_address=eth_ip, mac_address=0x02adb0000001,
                 buffer_depth=255)
-        if with_ethernet:
+        if with_ethernet and with_ethernet_dma:
+            from adp_ethmac import ADPEthMAC
+            from litex.soc.interconnect import axi
+            if not hasattr(self, "dma_bus"):
+                raise ValueError("--with-ethernet-dma needs a CPU with a coherent DMA bus")
+            dma_axi = axi.AXIInterface(data_width=64, address_width=32,
+                id_width=self.cpu.dma_bus.id_width)
+            # Not "ethmac": litex_json2dts would then add a node for LiteEth.
+            self.ethdma = ADPEthMAC(self.ethphy, dma_axi)
+            self.dma_bus.add_master(name="ethdma", master=dma_axi)
+            self.irq.add("ethdma", use_loc_if_exists=True)
+            self.add_ethernet_timing_constraints(self.ethphy)
+        elif with_ethernet:
             # More slots than the default of 2 give Linux at 100 MHz more time to empty them
             # (litex/linux/README.md, "Ethernet").
             self.add_ethernet(phy=self.ethphy, local_ip=eth_ip, remote_ip=remote_ip,
-                mac_address=0x02adb0000001, nrxslots=8, ntxslots=4)
+                mac_address=0x02adb0000001, nrxslots=16, ntxslots=8)
             self.add_constant("TFTP_SERVER_PORT", tftp_port)
 
         if with_sdcard or with_sdcard_write:
@@ -224,18 +240,23 @@ def main():
     parser.add_target_argument("--with-sdcard",  action="store_true", help="Add LiteSDCard, read only.")
     parser.add_target_argument("--with-sdcard-write", action="store_true", help="Add LiteSDCard with its write path.")
     parser.add_target_argument("--with-ac97",    action="store_true", help="Add the AC97 controller with DMA.")
+    parser.add_target_argument("--with-ethernet-dma", action="store_true", help="With --with-ethernet: the MAC with DMA of adp_ethmac.py.")
     args = parser.parse_args()
-    if (args.with_etherbone or args.with_ethernet) and not args.eth_ip:
+    # The BIOS and Etherbone use the IP addresses; the MAC with DMA serves only Linux.
+    liteeth = args.with_ethernet and not args.with_ethernet_dma
+    if (args.with_etherbone or liteeth) and not args.eth_ip:
         parser.error("Ethernet needs --eth-ip: an address that no station answers on the LAN")
     if args.with_etherbone and args.with_ethernet:
         parser.error("--with-etherbone and --with-ethernet exclude each other")
-    if args.with_ethernet and not args.remote_ip:
+    if liteeth and not args.remote_ip:
         parser.error("--with-ethernet needs --remote-ip, or the BIOS asks the LAN for 192.168.1.100")
+    if args.with_ethernet_dma and not args.with_ethernet:
+        parser.error("--with-ethernet-dma needs --with-ethernet")
 
     soc = BaseSoC(sys_clk_freq=args.sys_clk_freq, speedgrade=args.speedgrade, with_bist=args.with_bist,
         with_etherbone=args.with_etherbone, with_ethernet=args.with_ethernet, eth_ip=args.eth_ip,
         remote_ip=args.remote_ip, tftp_port=args.tftp_port, with_sdcard=args.with_sdcard, with_sdcard_write=args.with_sdcard_write,
-        with_ac97=args.with_ac97,
+        with_ac97=args.with_ac97, with_ethernet_dma=args.with_ethernet_dma,
         **parser.soc_argdict)
     builder = Builder(soc, **parser.builder_argdict)
     if _inside(builder.output_dir, adp_xc7k160_platform._REPOSITORY):

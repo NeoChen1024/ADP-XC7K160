@@ -20,8 +20,9 @@ names start with `MAC_`; the power-down pin is `PHY_PWRDWN`. The Gigabit PHY (U1
 - The PHY operates normally while `PHY_PWRDWN` (Y20) is low.
 - `MAC_PHY_LINKSTS` (AF22) follows the pull: the PHY does not drive it.
 
-The LiteX MAC and Etherbone use this PHY ([litex/README.md](../litex/README.md)), and so does the
-`liteeth` driver of Linux ([litex/linux/README.md](../litex/linux/README.md)).
+The LiteX MAC, the MAC with DMA and Etherbone use this PHY ([litex/README.md](../litex/README.md)).
+Linux reached about 94 Mbit/s of TCP into the board, and 90 Mbit/s out with the MAC with DMA
+([litex/linux/README.md](../litex/linux/README.md)).
 
 ## Straps: do not put `PULLUP` on these pins
 

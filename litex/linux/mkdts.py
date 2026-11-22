@@ -7,8 +7,9 @@
 # Run it with the Python of the LiteX installation. It runs litex_json2dts_linux, replaces the
 # bootargs (the generator gives a static ip= and an ext4 root), and adds the nodes that the
 # generator does not know: the two seven-segment digits (adp-seven-seg.c), the AC97 controller
-# (adp-ac97.c), and the PMU events of NaxRiscv. The AC97 driver has fixed CSR offsets; this script
-# checks them. It also lets the SD card run in high speed mode (50 MHz).
+# (adp-ac97.c), the Ethernet MAC with DMA (adp-ethmac.c), and the PMU events of NaxRiscv. The two
+# drivers have fixed CSR offsets; this script checks them. It also lets the SD card run in high
+# speed mode (50 MHz).
 
 import argparse
 import json
@@ -64,6 +65,18 @@ AC97 = """
 }};
 """
 
+# The MAC address is the locally administered address of the workbench, as for LiteEth.
+ETHMAC = """
+&{{/soc}} {{
+    ethmac: ethernet@{base:x} {{
+        compatible = "adp-xc7k160,ethmac";
+        reg = <0x{base:x} 0x{size:x}>;
+        interrupts = <{irq}>;
+        local-mac-address = [02 ad b0 00 00 01];
+    }};
+}};
+"""
+
 # The hardware events of NaxRiscv (PerformanceCounterService in its Service.scala): 1 I$ refill,
 # 2 D$ refill, 3 D$ writeback, 4 branch miss. mhpmcounter3 to 6 (mask 0x78) can count each of them.
 # OpenSBI reads this node. Cycles and instructions must be mapped to mcycle and minstret, or perf
@@ -91,6 +104,25 @@ AC97_OFFSETS = {
     "play_period": 0x54, "rec_period": 0x58,
     "ev_status": 0x5c, "ev_pending": 0x60, "ev_enable": 0x64,
 }
+
+
+# The CSR offsets that adp-ethmac.c uses.
+ETHMAC_OFFSETS = {
+    "rx_buf": 0x00, "rx_bufs": 0x04, "rx_stat": 0x08, "rx_csum": 0x0c, "rx_pop": 0x10,
+    "rx_dropped": 0x14, "tx_addr": 0x18, "tx_ctrl": 0x1c, "tx_room": 0x20, "tx_done": 0x24,
+    "ev_status": 0x28, "ev_pending": 0x2c, "ev_enable": 0x30, "core_rx_datapath_crc_errors": 0x3c,
+}
+
+
+def checked_node(csr, name, offsets, driver, template):
+    base = csr["csr_bases"][name]
+    regs = csr["csr_registers"]
+    for reg, offset in offsets.items():
+        got = regs[f"{name}_{reg}"]["addr"] - base
+        if got != offset:
+            sys.exit(f"{name}_{reg} is at +0x{got:x}, and {driver} expects +0x{offset:x}")
+    end = max(r["addr"] + 4 * r["size"] for n, r in regs.items() if n.startswith(f"{name}_"))
+    return template.format(base=base, size=end - base, irq=csr["constants"][f"{name}_interrupt"])
 
 
 def ac97_node(csr):
@@ -126,6 +158,8 @@ def main():
         dts += SD_HIGH_SPEED
     if "ac97" in bases:
         dts += ac97_node(csr)
+    if "ethdma" in bases:
+        dts += checked_node(csr, "ethdma", ETHMAC_OFFSETS, "adp-ethmac.c", ETHMAC)
     if "config_cpu_type_naxriscv" in csr["constants"]:
         dts += PMU
     if "seven_seg" in bases:

@@ -1,17 +1,18 @@
 # Linux and Debian on the LiteX SoC
 
-The SoC in U4 ([../README.md](../README.md)) boots OpenSBI, Linux 6.18.64 and Debian 13 from the SD
-card. Linux brings up both NaxRiscv cores, and uses the UART, the Ethernet MAC, the SD card, the
+The reference SoC ([../README.md](../README.md)) boots OpenSBI, Linux 6.18.64 and Debian 13 from the
+SD card. Linux brings up both NaxRiscv cores, and uses the UART, the Ethernet MAC, the SD card, the
 XADC, the seven-segment digits and the AC97 codec. The software is built outside this repository.
 
 | File | Contents |
 |---|---|
 | `adp.config` | The kernel config fragment |
 | `patches/` | Patches for the kernel source |
-| `prepare-kernel.sh` | Applies `patches/` to a kernel source tree, and copies the three drivers below into it |
+| `prepare-kernel.sh` | Applies `patches/` to a kernel source tree, and copies the four drivers below into it |
 | `litex-xadc-hwmon.c` | hwmon driver for the XADC CSRs |
 | `adp-seven-seg.c` | The two seven-segment digits as a line display and two LEDs |
 | `adp-ac97.c` | ALSA driver for the AC97 controller |
+| `adp-ethmac.c` | Driver for the Ethernet MAC with DMA of `adp_ethmac.py` |
 | `adp-7seg-temp.c` | A tool that shows the FPGA temperature on the digits |
 | `mkdts.py` | Makes the DTS from `csr.json` |
 | `boot-sd.json`, `boot-net.json` | The `boot.json` of the BIOS, for the SD card and for TFTP |
@@ -45,19 +46,19 @@ in `r1`, OpenSBI stops without output. Do not use the defaults of LiteX: they pu
   FW_JUMP_ADDR=0x41000000 FW_JUMP_FDT_ADDR=0x46000000`. Its console is the LiteX UART, through the
   DTB.
 - **Kernel** 6.18.64, with `riscv64-linux-gnu-gcc` 16.2.1:
-  1. Give `sh prepare-kernel.sh /path/to/linux`. It applies `patches/`, and copies the three
+  1. Give `sh prepare-kernel.sh /path/to/linux`. It applies `patches/`, and copies the four
      drivers into the tree. `patches/0002` gives them the options `ADP_SEVEN_SEG`,
-     `SENSORS_LITEX_XADC` and `SND_ADP_AC97`.
+     `SENSORS_LITEX_XADC`, `SND_ADP_AC97` and `ADP_ETHMAC`.
   2. Merge `adp.config` over the defconfig. The start of `adp.config` gives the commands. The
      kernel version is then `6.18.64-adp`.
   3. Build the `Image` and the modules.
 - The drivers of the board are built into the kernel, so that they work before the root file
-  system is mounted. So are `configfs`, `nls_iso8859_1`, the line display core and
+  system is mounted. The kernel has the drivers of both Ethernet MACs, so it works with both SoCs. So are `configfs`, `nls_iso8859_1`, the line display core and
   `snd-ac97-codec`.
 - **DTB**: `python3 mkdts.py csr.json > linux.dts && dtc -O dtb -o linux.dtb linux.dts`, with the
   Python of the LiteX installation. `mkdts.py` runs `litex_json2dts_linux`, replaces the bootargs,
-  and adds the nodes of the seven-segment digits and of the AC97 controller. It also adds the PMU
-  events and the high speed mode of the SD card.
+  and adds the nodes of the seven-segment digits, the AC97 controller and the MAC with DMA. It also
+  adds the PMU events and the high speed mode of the SD card.
 - **A DTB works only with the SoC that it was made from.** A new CSR moves the addresses of the
   others. The AC97 controller moved the MAC, the SD card, the digits and the XADC, for example.
 
@@ -189,32 +190,72 @@ Results **[measured, 2026-11-21]**:
 
 ### Ethernet
 
-The `liteeth` driver of Linux 6.18.64 can stop its TX queue for good. `liteeth_start_xmit()` stops
-the queue when the MAC is busy, and the TX interrupt wakes the queue only if it is stopped. If the
-interrupt of the last frame comes between the check and the stop, nothing wakes the queue. On
-2026-11-21 this occurred after about 30 minutes of `apt`: eth0 received frames and sent none, and
-the kernel log showed `LITEETH_READER_READY not ready`.
+Two MACs can carry eth0. The target option selects one ([../README.md](../README.md)):
 
-`patches/0001-net-liteeth-do-not-stall-the-tx-queue.patch` reads the state again after the stop. It
-also adds a TX timeout handler that wakes the queue.
+- The LiteEth MAC (`--with-ethernet`): the CPU copies each frame to or from a slot memory in the
+  FPGA. The driver is `liteeth`, with `patches/0001`, `0004` and `0005`.
+- The MAC with DMA (`--with-ethernet-dma`, `adp_ethmac.py`): the frames go between the MAC and the
+  main RAM through the coherent DMA bus. The driver is `adp-ethmac.c`.
 
-The `dropped` count of `ip -s link` is not a count of lost frames:
+The CPU is the limit with LiteEth. On 2026-11-22 a program read and wrote the slot memory through
+`/dev/mem`. Each access took 200 to 240 ns, also for 8-byte accesses, and the CPU makes one access
+at a time. Thus the copy of a frame of 1514 bytes takes about 50 µs, and a frame takes 123 µs on
+the wire at 100 Mbit/s.
 
-- The driver counts each of its own drops also in `rx_errors`.
-- LiteEth has no address filter. The network stack discards the frames of other stations, and
-  counts them in `dropped`.
-- The MAC counts the frames that it drops for lack of a free slot in the CSR
-  `ethmac_sram_writer_errors`. Linux does not read it. It counts from the configuration, also
-  before Linux opens eth0.
+The patches of `liteeth`:
 
-Results **[measured, 2026-11-21]**, with the patch and 8 RX slots:
+- `0001` fixes a stop of the TX queue. `liteeth_start_xmit()` stopped the queue when the MAC was
+  busy, and the TX interrupt woke the queue only if it was stopped. If the interrupt came between
+  the check and the stop, nothing woke the queue. On 2026-11-21 this occurred after about 30
+  minutes of `apt`. The patch reads the state again after the stop, and adds a TX timeout handler.
+- `0004` receives in a NAPI poll and gives the frames to GRO. It sums each frame during the copy:
+  received frames get `CHECKSUM_COMPLETE`, and the driver offers `HW_CSUM` and scatter-gather. It
+  copies from the pieces of an skb with aligned loads, because misaligned loads trap on NaxRiscv.
+  `memcpy()` of RISC-V copies one byte at a time if the two addresses are not aligned alike.
+- `0005` adds TSO in software: the driver writes the headers of each segment, and the sum of the
+  copy gives the TCP checksum.
 
-- In 60 s without load, eth0 received 1286 frames. `ethmac_sram_writer_errors` did not change.
-- SSH (`aes128-ctr`) sent 64 MiB from the host to the board in 56 s, and from the board to the host
-  in 51 s. The CPU limits this speed. `ethmac_sram_writer_errors`, `tx_dropped` and `rx_errors` did
-  not change.
-- During transfers in both directions at the same time, with the AC97 test, the MAC dropped 13
-  frames. The transfers completed.
+`adp-ethmac.c`:
+
+- Receive: the driver gives 256 buffers to the engine. The engine writes each frame 2 bytes after
+  the start of a buffer, so that the IP header is aligned, and sums the frame. The driver builds
+  the skb around the buffer: the CPU does not copy the frame.
+- Transmit: the driver gives the engine one descriptor for each piece of a frame. The engine reads
+  the pieces and inserts the checksum. For TSO the driver writes the headers of each segment into
+  a coherent buffer; the payload pieces point into the skb.
+- The engine keeps its buffers when eth0 goes down. The next open uses them again.
+- `rx_missed_errors` is the count of frames that the engine dropped for lack of room, and
+  `rx_crc_errors` the count of frames with a bad CRC.
+
+The `dropped` count of `ip -s link` is not a count of lost frames. Neither MAC has an address
+filter. The network stack discards the frames of other stations and the frames of unknown
+protocols (for example PTP), and counts the latter in `dropped`. With LiteEth, the MAC counts the
+frames that it drops for lack of a free slot in the CSR `ethmac_sram_writer_errors`. Linux does not
+read it.
+
+Results **[measured, 2026-11-22]**. The host ran `iperf3 -s` on the LAN. The board ran
+`taskset -c 1 iperf3 -c HOST -t 10`, with `-R` for the direction into the board. Out is from the
+board. The TCP values are the receiver side of iperf3, in Mbit/s. The maximum of TCP with an MTU
+of 1500 is about 94.
+
+| MAC and driver | TCP out | TCP in | UDP out (`-u -b 100M`) |
+|---|---|---|---|
+| LiteEth, 8 RX and 4 TX slots, `liteeth` with `0001` | 58.4 | 71.1 | not measured |
+| The same, with `0004` | 68.5 | 93.9 | 77.0 |
+| The same, with `0004` and `0005` | 76.2 | 93.6 | not measured |
+| LiteEth, 16 RX and 8 TX slots, `0001`, `0004`, `0005` | 77.7 | 93.7 | 76.2 |
+| The MAC with DMA, `adp-ethmac.c` | 89.5 | 93.8 | 93.4 |
+
+- With LiteEth, CPU 0 was busy all the time in both directions. A program at the lowest priority
+  got 1% of CPU 0. The copy took about one third of CPU 0, and the TCP stack the rest.
+- With iperf3 on CPU 0, all the work was on one CPU: the MAC with DMA gave 69.5 out and 81.7 in.
+- In both directions at the same time for 60 s, the MAC with DMA gave 77.9 out and 75.8 in. The
+  engine dropped 4715 frames, and the host sent again 12640 segments. The engine then had no free
+  buffer in 2 of 1000 samples: the poll was late while CPU 0 was busy.
+- 32 MiB of random data went through SSH in each direction with the same MD5. Ping with 0 to 1472
+  bytes of data worked. The kernel showed no checksum fault.
+- An `ip link set eth0 down` and `up` with the MAC with DMA kept the receive buffers, and TCP worked
+  after it.
 
 ### SD card
 

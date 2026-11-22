@@ -1,7 +1,7 @@
 # LiteX SoC for the ADP-XC7K160
 
 This directory has a platform and an SoC for [LiteX](https://github.com/enjoy-digital/litex). The
-SoC that is now in U4 has two NaxRiscv cores and runs Debian from the SD card. The Linux side is in
+reference SoC has two NaxRiscv cores and runs Debian from the SD card. The Linux side is in
 [linux/README.md](linux/README.md).
 
 | File | Contents |
@@ -9,9 +9,10 @@ SoC that is now in U4 has two NaxRiscv cores and runs Debian from the SD card. T
 | `adp_xc7k160_platform.py` | The LiteX platform. It reads the pins and the I/O standards from `pins.csv`, by the signal names of the manual |
 | `adp_xc7k160_target.py` | The SoC: the CPU (VexRiscv by default), the BIOS, the UART, the 1 GiB DDR3 as main RAM, the buttons and the displays. As options: the LiteDRAM BIST, Etherbone or the MAC on the 10/100 Ethernet, the SD card, and the AC97 controller with DMA |
 | `adp_ac97.py` | The AC97 controller: the AC-link, the codec commands, and two DMA engines for playback and capture |
+| `adp_ethmac.py` | The Ethernet MAC with DMA: the MAC core of LiteEth with a DMA front end on an AXI4 master |
 | `naxriscv_l1.scala` | Changes the L1 cache sizes of NaxRiscv (see "Size of the L1 caches" below) |
 | `versions.sh` | Lists the URL and the commit of each repository of a LiteX installation |
-| `versions.txt` | The output of `versions.sh` for the installation that built the SoC in U4 |
+| `versions.txt` | The output of `versions.sh` for the installation that built the reference SoC |
 | `tftpd.py` | A TFTP server that only reads, for the network boot of the BIOS |
 | `linux/` | The files for Linux and Debian: see [linux/README.md](linux/README.md) |
 
@@ -64,7 +65,8 @@ The options of the target:
 |---|---|
 | `--with-bist` | The generator and the checker of LiteDRAM |
 | `--with-etherbone --eth-ip A.B.C.D` | Etherbone: a UDP/IP stack in the FPGA that answers ARP, ping and Wishbone accesses on UDP port 1234. The CPU does not take part |
-| `--with-ethernet --eth-ip A.B.C.D` | The LiteEth MAC with 8 RX slots and 4 TX slots, for the BIOS and the `liteeth` driver of Linux. `--remote-ip` and `--tftp-port` give the TFTP server of the BIOS |
+| `--with-ethernet --eth-ip A.B.C.D` | The LiteEth MAC with 16 RX slots and 8 TX slots, for the BIOS and the `liteeth` driver of Linux. `--remote-ip` and `--tftp-port` give the TFTP server of the BIOS |
+| `--with-ethernet-dma` | With `--with-ethernet`: the MAC with DMA of `adp_ethmac.py` in place of LiteEth, for `adp-ethmac.c` of Linux. The BIOS then has no network boot, and the IP options are not needed. It needs NaxRiscv with `--with-coherent-dma` |
 | `--with-sdcard` | LiteSDCard on the 4-bit bus, read only: the SoC has no path that writes the card |
 | `--with-sdcard-write` | LiteSDCard with its write path. Use it only with a card that the owner gave for writing (AGENTS.md) |
 | `--with-ac97` | The AC97 controller of `adp_ac97.py` |
@@ -74,17 +76,18 @@ The options of the target:
 Give an address that no station answers on that LAN. The MAC address is `02:ad:b0:00:00:01`, the
 locally administered address of the workbench.
 
-## The SoC in U4
+## The reference SoC
 
-The SoC in U4 (written on 2026-11-22) was built with these options:
+The reference SoC is built with these options. `jtag/flash_u4.sh` writes it into U4, so that the
+board loads it at power-on ([docs/configuration.md](../docs/configuration.md)).
 
 ```sh
 export JAVA_HOME=/path/to/java-17-openjdk PATH=/path/to/sbt/bin:$PATH
 python3 $A/litex/adp_xc7k160_target.py --build \
     --cpu-type naxriscv --xlen 64 --with-fpu --with-rvc --with-coherent-dma --cpu-count 2 \
     --l2-bytes 524288 --l2-ways 8 --integrated-sram-size 0x4000 --sys-clk-freq 100e6 \
-    --with-ethernet --eth-ip A.B.C.D --remote-ip E.F.G.H --tftp-port 6069 \
-    --with-sdcard-write --with-ac97 --soc-json csr.json \
+    --with-ethernet --with-ethernet-dma --with-sdcard-write \
+    --with-ac97 --soc-json csr.json \
     --scala-file gen.scala --scala-file $A/litex/naxriscv_l1.scala \
     --scala-args icache-bytes=32768,icache-ways=8,dcache-bytes=32768,dcache-ways=8
 ```
@@ -97,8 +100,11 @@ python3 $A/litex/adp_xc7k160_target.py --build \
   (`NaxSoc.scala` of NaxRiscv).
 - The CPU runs at the system clock, 100 MHz. Thus the DDR3 runs at DDR3-800.
 - The 8 KiB default SRAM left less than 2 KiB for the stack of the BIOS. Thus the SRAM is 16 KiB.
-- The build was -2 at 100 MHz with Vivado 2025.2.1. The setup slack was +0.285 ns, with 64,747 LUT,
-  44,798 FF and 224.5 block RAM tiles. The slack of the clock `ac97_bit_clk` was +1.621 ns.
+- The Ethernet MAC is the MAC with DMA ("Ethernet and the SD card"). The BIOS thus boots only from
+  the SD card.
+- The build on 2026-11-22 was -2 at 100 MHz with Vivado 2025.2.1. The setup slack was +0.109 ns,
+  with 64,973 LUT, 45,340 FF and 219.5 block RAM tiles. The slack of the clock `ac97_bit_clk` was
+  +1.621 ns.
 
 ### Buses of NaxRiscv in LiteX
 
@@ -156,7 +162,7 @@ the sizes as `--scala-args`:
 Each way stays at 4 KiB, the page size, because the caches are indexed with the virtual address.
 The target then writes the same sizes into the DTS.
 
-The SoC in U4 has 32 KiB and 8 ways for both caches. The comparison is a build with the default
+The reference SoC has 32 KiB and 8 ways for both caches. The comparison is a build with the default
 caches (16 KiB, 4 ways) and the same other options, made on 2026-11-21. Its setup slack was
 +0.751 ns, with 62,166 LUT, 43,058 FF and 208.5 block RAM tiles. Thus the larger caches use 2,581
 more LUT and 16 more block RAM tiles.
@@ -242,6 +248,42 @@ LiteDRAM on the native port (256 bits). It does not use the CPU.
 These are results for one chip at room temperature.
 
 ## Ethernet and the SD card
+
+### The MAC with DMA
+
+`adp_ethmac.py` keeps the MAC core of LiteEth (preamble, CRC, padding, gap), and replaces its slot
+memory with a DMA front end. The front end has an AXI4 master of 64 bits on the coherent DMA bus of
+NaxRiscv. The CPU then does not copy the frames ([linux/README.md](linux/README.md)).
+
+- Receive: a byte FIFO of 4 KiB, then single AXI writes into the buffers that the driver gives
+  through a FIFO of 256 entries. The engine starts the frame 2 bytes after the buffer address, and
+  sums the frame for `CHECKSUM_COMPLETE`. A completion FIFO gives the length, an error bit and the
+  sum. If the byte FIFO has no room for a frame of 1536 bytes, the engine drops the frame and
+  counts it.
+- Transmit: a FIFO of 64 descriptors, one for each piece of a frame, at any byte address. The engine
+  reads the pieces with single AXI reads into one of two frame buffers of 2 KiB. It writes the
+  checksum that `CHECKSUM_PARTIAL` asks for, and then sends the frame.
+- 100 Mbit/s needs one 64-bit beat in 64 cycles at 100 MHz. Thus the engine makes one AXI transfer
+  at a time, without bursts.
+- The CSRs keep the base address and the interrupt of the LiteEth MAC, so the other addresses of
+  the SoC do not move.
+
+Before the first build, a testbench of migen simulated the front end with an AXI memory of random
+latency. It sent frames of 14 to 1600 bytes and pieces at random byte addresses, and all were
+correct. The testbench is not in this repository.
+
+The builds of 2026-11-22, -2 at 100 MHz, with all other options of the reference SoC:
+
+| Ethernet | Setup slack | LUT | FF | Block RAM tiles |
+|---|---|---|---|---|
+| LiteEth, 8 RX and 4 TX slots | +0.285 ns | 64,747 | 44,798 | 224.5 |
+| LiteEth, 16 RX and 8 TX slots | +0.371 ns | 65,125 | 44,815 | 232.5 |
+| The MAC with DMA (`--with-ethernet-dma`, the reference SoC) | +0.109 ns | 64,973 | 45,340 | 219.5 |
+
+The slack of the MAC with DMA is the lowest, but its worst path is in the L2 cache of NaxRiscv: a
+route of 8.75 ns to a block RAM of the L2 data. Thus the placement, and not the MAC, sets it.
+
+### Limits
 
 Limits of the Ethernet options:
 

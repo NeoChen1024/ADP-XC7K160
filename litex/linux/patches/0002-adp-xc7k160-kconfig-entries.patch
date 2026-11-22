@@ -2,8 +2,9 @@ From: ADP-XC7K160 board notes
 Subject: [PATCH] Kconfig and Makefile entries for the ADP-XC7K160 drivers
 
 The drivers of the LiteX SoC of the ADP-XC7K160 can be built into the
-kernel: the seven-segment digits, the XADC and the AC97 controller.
-prepare-kernel.sh of the board notes copies their sources into the tree.
+kernel: the seven-segment digits, the XADC, the AC97 controller and the
+Ethernet MAC with DMA. prepare-kernel.sh of the board notes copies their
+sources into the tree.
 
 diff -ruN a/drivers/auxdisplay/Kconfig b/drivers/auxdisplay/Kconfig
 --- a/drivers/auxdisplay/Kconfig	2026-11-22 00:23:22.189604631 +0800
@@ -90,3 +91,27 @@ diff -ruN a/sound/drivers/Makefile b/sound/drivers/Makefile
  obj-$(CONFIG_SND_DUMMY) += snd-dummy.o
  obj-$(CONFIG_SND_ALOOP) += snd-aloop.o
  obj-$(CONFIG_SND_VIRMIDI) += snd-virmidi.o
+diff -ruN a/drivers/net/ethernet/litex/Kconfig b/drivers/net/ethernet/litex/Kconfig
+--- a/drivers/net/ethernet/litex/Kconfig	2026-11-22 14:45:56.109295995 +0800
++++ b/drivers/net/ethernet/litex/Kconfig	2026-11-22 14:45:56.122629590 +0800
+@@ -25,4 +25,12 @@
+ 	  LiteX is a soft system-on-chip that targets FPGAs. LiteETH is a basic
+ 	  network device that is commonly used in LiteX designs.
+ 
++config ADP_ETHMAC
++	tristate "ADP-XC7K160 Ethernet MAC with DMA"
++	depends on OF && HAS_IOMEM && HAS_DMA
++	help
++	  The Ethernet MAC with DMA of the LiteX SoC of the Andes ADP-XC7K160
++	  board: the MAC core of LiteEth with a DMA front end on the coherent
++	  DMA bus of NaxRiscv.
++
+ endif # NET_VENDOR_LITEX
+diff -ruN a/drivers/net/ethernet/litex/Makefile b/drivers/net/ethernet/litex/Makefile
+--- a/drivers/net/ethernet/litex/Makefile	2026-11-22 14:45:56.109295995 +0800
++++ b/drivers/net/ethernet/litex/Makefile	2026-11-22 14:45:56.122629590 +0800
+@@ -3,3 +3,4 @@
+ #
+ 
+ obj-$(CONFIG_LITEX_LITEETH) += litex_liteeth.o
++obj-$(CONFIG_ADP_ETHMAC) += adp-ethmac.o

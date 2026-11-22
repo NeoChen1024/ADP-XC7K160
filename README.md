@@ -23,7 +23,7 @@ text says that it is not known.
 | FPGA | XC7K160T-FBG676, marked -1. The designs here are built as -2 | [docs/fpga.md](docs/fpga.md) |
 | Banks and power | 3.3 V HR banks, 1.5 V DDR3 banks; SW11 sets bank 16 (now 3.3 V). No user LED | [docs/power.md](docs/power.md) |
 | Clocks | 20 MHz `OSCCLK1`, 200 MHz `SYSCLK`, 100 MHz `CKOUT1`, 32.768 kHz. `OSCCLK2` is not fitted | [docs/clocks.md](docs/clocks.md) |
-| Configuration | Master BPI x16 from U4, a 128 MB NOR flash. U4 now holds the LiteX SoC | [docs/configuration.md](docs/configuration.md) |
+| Configuration | Master BPI x16 from U4, a 128 MB NOR flash | [docs/configuration.md](docs/configuration.md) |
 | JTAG | J3 (6-pin) and J4 (14-pin); used here through xvc-pico | [docs/jtag.md](docs/jtag.md) |
 | UART | COM1 (S1) through an RS-232 transceiver, up to 500000 baud | [docs/uart.md](docs/uart.md) |
 | DDR3 | 1 GiB, 32 bits. MIG works up to DDR3-1600, LiteDRAM up to DDR3-1400 | [docs/ddr3.md](docs/ddr3.md) |

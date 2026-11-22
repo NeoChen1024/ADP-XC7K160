@@ -1,0 +1,369 @@
+From: ADP-XC7K160 board notes
+Subject: [PATCH] net: liteeth: software TSO
+
+Without TSO the stack segments each TCP skb before the driver, and each
+segment costs an skb, a pass through the qdisc and a free. Take TSO skbs, and
+write each segment into a slot directly: the headers come from
+tso_build_hdr() with the IPv4 header checksum, and the sum of the copy gives
+the TCP checksum. If the MAC has no free slot, the driver keeps the skb, stops
+the queue, and the poll sends the rest after the event of a sent frame. The
+poll holds the lock of the queue, so that it does not run together with
+ndo_start_xmit().
+
+On a NaxRiscv SoC at 100 MHz, TCP out went from about 68 to about 76 Mbit/s.
+
+--- a/drivers/net/ethernet/litex/litex_liteeth.c
++++ b/drivers/net/ethernet/litex/litex_liteeth.c
+@@ -13,6 +13,8 @@
+ #include <linux/of_net.h>
+ #include <linux/platform_device.h>
+ #include <linux/udp.h>
++#include <net/ip6_checksum.h>
++#include <net/tso.h>
+ #include <net/checksum.h>
+ 
+ #define LITEETH_WRITER_SLOT       0x00
+@@ -51,6 +53,10 @@
+ 	u32 tx_slot;
+ 	u32 num_tx_slots;
+ 	void __iomem *tx_base;
++	struct sk_buff *tx_skb;		/* the skb that has frames left to send */
++	struct tso_t tso;
++	unsigned int tso_left;		/* payload bytes of tx_skb that are not sent */
++	u8 tso_hdr[TSO_HEADER_SIZE] __aligned(8);
+ 
+ 	/* Rx */
+ 	u32 rx_slot;
+@@ -178,10 +184,31 @@
+ 		liteeth_slot_byte(w, *src++);
+ }
+ 
+-/* Write the skb into a slot, and return the sum of the frame from its start. */
+-static __wsum liteeth_slot_write_skb(void __iomem *dst, struct sk_buff *skb)
++/* Write the last partial word, and return the sum of the frame from its start. */
++static __wsum liteeth_slot_finish(struct liteeth_slot_writer *w)
+ {
+-	struct liteeth_slot_writer w = { .dst = dst };
++	/* The bytes after the end of the frame are 0, and do not change the sum. */
++	if (w->n)
++		liteeth_slot_put(w, w->acc);
++	return csum_add((__force __wsum)(u32)w->sum, (__force __wsum)(u32)(w->sum >> 32));
++}
++
++/* Give the frame in the next slot to the MAC. */
++static void liteeth_tx_start(struct liteeth *priv, unsigned int len)
++{
++	litex_write8(priv->base + LITEETH_READER_SLOT, priv->tx_slot);
++	litex_write16(priv->base + LITEETH_READER_LENGTH, len);
++	litex_write8(priv->base + LITEETH_READER_START, 1);
++	dev_sw_netstats_tx_add(priv->netdev, 1, len);
++	priv->tx_slot = (priv->tx_slot + 1) % priv->num_tx_slots;
++}
++
++/* Send an skb that is one frame. */
++static void liteeth_tx_one(struct liteeth *priv, struct sk_buff *skb)
++{
++	void __iomem *slot = priv->tx_base + priv->tx_slot * priv->slot_size;
++	struct liteeth_slot_writer w = { .dst = slot };
++	__wsum csum;
+ 	int i;
+ 
+ 	liteeth_slot_write(&w, skb->data, skb_headlen(skb));
+@@ -190,29 +217,141 @@
+ 
+ 		liteeth_slot_write(&w, skb_frag_address(f), skb_frag_size(f));
+ 	}
+-	/* The bytes after the end of the frame are 0, and do not change the sum. */
+-	if (w.n)
+-		liteeth_slot_put(&w, w.acc);
+-	return csum_add((__force __wsum)(u32)w.sum, (__force __wsum)(u32)(w.sum >> 32));
++	csum = liteeth_slot_finish(&w);
++
++	/* For CHECKSUM_PARTIAL the sum of the copy gives the checksum. */
++	if (skb->ip_summed == CHECKSUM_PARTIAL) {
++		int start = skb_checksum_start_offset(skb);
++		__sum16 check;
++
++		/* The sum from start: remove the headers, and align it to start. */
++		csum = csum_shift(csum_sub(csum, csum_partial(skb->data, start, 0)), start);
++		check = csum_fold(csum);
++		if (check == 0 && skb->csum_offset == offsetof(struct udphdr, check))
++			check = CSUM_MANGLED_0;
++		__raw_writew((__force u16)check, slot + start + skb->csum_offset);
++	}
++	liteeth_tx_start(priv, skb->len);
++}
++
++/*
++ * Send the next segment of a TSO skb: the headers of tso_build_hdr(), with
++ * the IPv4 header checksum, and the payload. The sum of the copy gives the TCP
++ * checksum, which goes into the slot after the copy.
++ */
++static void liteeth_tx_tso_segment(struct liteeth *priv)
++{
++	struct sk_buff *skb = priv->tx_skb;
++	void __iomem *slot = priv->tx_base + priv->tx_slot * priv->slot_size;
++	struct liteeth_slot_writer w = { .dst = slot };
++	int toff = skb_transport_offset(skb);
++	int hdr_len = toff + priv->tso.tlen;
++	unsigned int size = min(priv->tso_left, (unsigned int)skb_shinfo(skb)->gso_size);
++	unsigned int left = size;
++	u8 *hdr = priv->tso_hdr;
++	struct tcphdr *th;
++	__wsum csum;
++	__sum16 check;
++
++	tso_build_hdr(skb, hdr, &priv->tso, size, size == priv->tso_left);
++	if (!priv->tso.ipv6)
++		ip_send_check((struct iphdr *)(hdr + skb_network_offset(skb)));
++	th = (struct tcphdr *)(hdr + toff);
++	th->check = 0;
++
++	liteeth_slot_write(&w, hdr, hdr_len);
++	while (left) {
++		unsigned int n = min_t(unsigned int, priv->tso.size, left);
++
++		liteeth_slot_write(&w, priv->tso.data, n);
++		tso_build_data(skb, &priv->tso, n);
++		left -= n;
++	}
++	csum = liteeth_slot_finish(&w);
++
++	csum = csum_shift(csum_sub(csum, csum_partial(hdr, toff, 0)), toff);
++	if (!priv->tso.ipv6) {
++		struct iphdr *iph = (struct iphdr *)(hdr + skb_network_offset(skb));
++
++		check = csum_tcpudp_magic(iph->saddr, iph->daddr, priv->tso.tlen + size,
++					  IPPROTO_TCP, csum);
++	} else {
++		struct ipv6hdr *ip6h = (struct ipv6hdr *)(hdr + skb_network_offset(skb));
++
++		check = csum_ipv6_magic(&ip6h->saddr, &ip6h->daddr, priv->tso.tlen + size,
++					IPPROTO_TCP, csum);
++	}
++	__raw_writew((__force u16)check, slot + toff + offsetof(struct tcphdr, check));
++
++	liteeth_tx_start(priv, hdr_len + size);
++	priv->tso_left -= size;
++}
++
++/*
++ * Send frames of tx_skb while the MAC has free slots. Return true when all of
++ * them are sent; then free the skb. The caller holds the lock of the queue.
++ */
++static bool liteeth_tx_fill(struct liteeth *priv)
++{
++	struct sk_buff *skb = priv->tx_skb;
++	unsigned int level = litex_read8(priv->base + LITEETH_READER_LEVEL);
++	unsigned int room = level < priv->num_tx_slots ? priv->num_tx_slots - level : 0;
++
++	if (!skb_is_gso(skb)) {
++		if (!room)
++			return false;
++		liteeth_tx_one(priv, skb);
++	} else {
++		for (; room && priv->tso_left; room--)
++			liteeth_tx_tso_segment(priv);
++		if (priv->tso_left)
++			return false;
++	}
++
++	dev_kfree_skb_any(skb);
++	priv->tx_skb = NULL;
++	return true;
+ }
+ 
+ /*
+- * Wake a stopped queue in the context of the poll, so that the transmissions
+- * after the wake run on the CPU of the poll. If the FIFO is still full, wait
+- * for the event of the next sent frame.
++ * Return true if the MAC has a free slot. If not, enable the event of a sent
++ * frame, so that the poll continues. The event is enabled only while the MAC
++ * is full, so that a running queue costs no interrupts.
++ */
++static bool liteeth_tx_room_or_arm(struct liteeth *priv)
++{
++	if (litex_read8(priv->base + LITEETH_READER_READY))
++		return true;
++	litex_write8(priv->base + LITEETH_READER_EV_PENDING, 1);
++	litex_write8(priv->base + LITEETH_READER_EV_ENABLE, 1);
++
++	/* A frame that ended before the enable gave no event: read the state again. */
++	if (!litex_read8(priv->base + LITEETH_READER_READY))
++		return false;
++	litex_write8(priv->base + LITEETH_READER_EV_ENABLE, 0);
++	return true;
++}
++
++/*
++ * Continue a stopped queue in the context of the poll: send the rest of
++ * tx_skb, and wake the queue when the MAC has room. The transmissions after a
++ * wake then run on the CPU of the poll.
+  */
+ static void liteeth_tx_complete(struct liteeth *priv)
+ {
+-	if (!netif_queue_stopped(priv->netdev))
++	struct netdev_queue *txq = netdev_get_tx_queue(priv->netdev, 0);
++
++	if (!netif_tx_queue_stopped(txq))
+ 		return;
+-	if (!litex_read8(priv->base + LITEETH_READER_READY)) {
+-		litex_write8(priv->base + LITEETH_READER_EV_PENDING, 1);
+-		litex_write8(priv->base + LITEETH_READER_EV_ENABLE, 1);
+-		if (!litex_read8(priv->base + LITEETH_READER_READY))
+-			return;
+-		litex_write8(priv->base + LITEETH_READER_EV_ENABLE, 0);
+-	}
+-	netif_wake_queue(priv->netdev);
++
++	__netif_tx_lock(txq, smp_processor_id());
++	while (priv->tx_skb && !liteeth_tx_fill(priv))
++		if (!liteeth_tx_room_or_arm(priv))
++			goto out;
++	if (liteeth_tx_room_or_arm(priv))
++		netif_tx_wake_queue(txq);
++out:
++	__netif_tx_unlock(txq);
+ }
+ 
+ static int liteeth_poll(struct napi_struct *napi, int budget)
+@@ -235,28 +374,6 @@
+ 	return done;
+ }
+ 
+-/*
+- * Stop the queue if the command FIFO of the MAC is full. The event of a sent
+- * frame is enabled only while the queue is stopped, so that a running queue
+- * costs no interrupts.
+- */
+-static bool liteeth_tx_stop_if_full(struct liteeth *priv)
+-{
+-	if (litex_read8(priv->base + LITEETH_READER_READY))
+-		return false;
+-
+-	netif_stop_queue(priv->netdev);
+-	litex_write8(priv->base + LITEETH_READER_EV_PENDING, 1);
+-	litex_write8(priv->base + LITEETH_READER_EV_ENABLE, 1);
+-
+-	/* A frame that ended before the enable gave no event: read the state again. */
+-	if (!litex_read8(priv->base + LITEETH_READER_READY))
+-		return true;
+-	litex_write8(priv->base + LITEETH_READER_EV_ENABLE, 0);
+-	netif_wake_queue(priv->netdev);
+-	return false;
+-}
+-
+ static irqreturn_t liteeth_interrupt(int irq, void *dev_id)
+ {
+ 	struct net_device *netdev = dev_id;
+@@ -304,7 +421,7 @@
+ 
+ 	napi_enable(&priv->napi);
+ 
+-	/* Enable the receive event. liteeth_tx_stop_if_full() enables the other. */
++	/* Enable the receive event. liteeth_tx_room_or_arm() enables the other. */
+ 	litex_write8(priv->base + LITEETH_WRITER_EV_ENABLE, 1);
+ 
+ 	netif_carrier_on(netdev);
+@@ -326,6 +443,11 @@
+ 	free_irq(netdev->irq, netdev);
+ 	napi_disable(&priv->napi);
+ 
++	if (priv->tx_skb) {
++		dev_kfree_skb_any(priv->tx_skb);
++		priv->tx_skb = NULL;
++	}
++
+ 	return 0;
+ }
+ 
+@@ -333,14 +455,26 @@
+ 				      struct net_device *netdev)
+ {
+ 	struct liteeth *priv = netdev_priv(netdev);
+-	void __iomem *txbuffer;
+-	__wsum csum;
++	unsigned int frame;
+ 
+-	if (liteeth_tx_stop_if_full(priv))
++	if (unlikely(priv->tx_skb)) {
++		netif_stop_queue(netdev);
+ 		return NETDEV_TX_BUSY;
++	}
++
++	if (skb_is_gso(skb)) {
++		int hdr_len = tso_start(skb, &priv->tso);
++
++		priv->tso_left = skb->len - hdr_len;
++		frame = hdr_len + skb_shinfo(skb)->gso_size;
++		if (unlikely(hdr_len > TSO_HEADER_SIZE))
++			frame = UINT_MAX;
++	} else {
++		frame = skb->len;
++	}
+ 
+ 	/* Reject oversize packets */
+-	if (unlikely(skb->len > priv->slot_size)) {
++	if (unlikely(frame > priv->slot_size)) {
+ 		if (net_ratelimit())
+ 			netdev_err(netdev, "tx packet too big\n");
+ 
+@@ -352,31 +486,23 @@
+ 	}
+ 
+ 	/*
+-	 * For CHECKSUM_PARTIAL the sum of the copy gives the checksum, which goes
+-	 * into the slot after the copy.
++	 * Stop the queue before the event is enabled: the poll continues only a
++	 * stopped queue.
+ 	 */
+-	txbuffer = priv->tx_base + priv->tx_slot * priv->slot_size;
+-	csum = liteeth_slot_write_skb(txbuffer, skb);
+-	if (skb->ip_summed == CHECKSUM_PARTIAL) {
+-		int start = skb_checksum_start_offset(skb);
+-		__sum16 check;
+-
+-		/* The sum from start: remove the headers, and align it to start. */
+-		csum = csum_shift(csum_sub(csum, csum_partial(skb->data, start, 0)), start);
+-		check = csum_fold(csum);
+-		if (check == 0 && skb->csum_offset == offsetof(struct udphdr, check))
+-			check = CSUM_MANGLED_0;
+-		__raw_writew((__force u16)check, txbuffer + start + skb->csum_offset);
++	priv->tx_skb = skb;
++	while (!liteeth_tx_fill(priv)) {
++		netif_stop_queue(netdev);
++		if (!liteeth_tx_room_or_arm(priv))
++			return NETDEV_TX_OK;	/* the poll sends the rest */
++		netif_start_queue(netdev);
+ 	}
+-	litex_write8(priv->base + LITEETH_READER_SLOT, priv->tx_slot);
+-	litex_write16(priv->base + LITEETH_READER_LENGTH, skb->len);
+-	litex_write8(priv->base + LITEETH_READER_START, 1);
+-
+-	dev_sw_netstats_tx_add(netdev, 1, skb->len);
+ 
+-	priv->tx_slot = (priv->tx_slot + 1) % priv->num_tx_slots;
+-	dev_kfree_skb_any(skb);
+-	liteeth_tx_stop_if_full(priv);
++	/* Stop the queue now if the MAC has no room for the next skb. */
++	if (!litex_read8(priv->base + LITEETH_READER_READY)) {
++		netif_stop_queue(netdev);
++		if (liteeth_tx_room_or_arm(priv))
++			netif_start_queue(netdev);
++	}
+ 
+ 	return NETDEV_TX_OK;
+ }
+@@ -481,8 +607,10 @@
+ 
+ 	netdev->netdev_ops = &liteeth_netdev_ops;
+ 	/* The driver sums each frame while it copies it to or from a slot. */
+-	netdev->features |= NETIF_F_RXCSUM | NETIF_F_SG | NETIF_F_HW_CSUM;
+-	netdev->hw_features |= NETIF_F_RXCSUM | NETIF_F_SG | NETIF_F_HW_CSUM;
++	netdev->features |= NETIF_F_RXCSUM | NETIF_F_SG | NETIF_F_HW_CSUM |
++			    NETIF_F_TSO | NETIF_F_TSO6;
++	netdev->hw_features |= NETIF_F_RXCSUM | NETIF_F_SG | NETIF_F_HW_CSUM |
++			       NETIF_F_TSO | NETIF_F_TSO6;
+ 	netif_napi_add_weight(netdev, &priv->napi, liteeth_poll, LITEETH_NAPI_WEIGHT);
+ 
+ 	err = register_netdev(netdev);
