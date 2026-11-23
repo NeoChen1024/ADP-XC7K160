@@ -9,10 +9,12 @@
 #
 # Inputs in /work: key.pub (the SSH public key for root), modules/lib/modules (from
 # "make modules_install INSTALL_MOD_PATH=..."), and overlay (litex/linux/rootfs of this repository:
-# the login message and the unit of adp-7seg-temp). The overlay goes in with owner root and the
-# modes 755 or 644, because the host umask can remove the read bits. The script empties the
-# /etc/motd of Debian, so that the login message shows only the board. Outputs in /work:
-#   rootfs.ext4  Debian 13 riscv64 (systemd, sshd, networkd with DHCP, timesyncd), 2 GiB, label rootfs
+# the login message, the units of adp-7seg-temp and ptp4l, and the PTP clock for chrony). The
+# overlay goes in with owner root and the modes 755 or 644, because the host umask can remove the
+# read bits. The script empties the /etc/motd of Debian, so that the login message shows only the
+# board. Outputs in /work:
+#   rootfs.ext4  Debian 13 riscv64 (systemd, sshd, networkd with DHCP, chrony, ptp4l), 2 GiB,
+#                label rootfs
 #   busybox      static riscv64 busybox, for the initramfs
 # Root has no password on the console; SSH accepts only the key.
 set -eux
@@ -23,7 +25,7 @@ apt-get install -y -q mmdebstrap e2fsprogs
 cd /work
 rm -rf rootfs
 mmdebstrap --arch=riscv64 --mode=root --variant=minbase \
-  --include=systemd-sysv,libpam-systemd,udev,systemd-resolved,systemd-timesyncd,openssh-server,iproute2,iputils-ping,ca-certificates,apt-utils,less,vim-tiny,procps,kmod,e2fsprogs,dosfstools,fdisk,cloud-guest-utils,wget,curl,sudo,htop,bash-completion,ethtool,linuxptp \
+  --include=systemd-sysv,libpam-systemd,udev,systemd-resolved,chrony,openssh-server,iproute2,iputils-ping,ca-certificates,apt-utils,less,vim-tiny,procps,kmod,e2fsprogs,dosfstools,fdisk,cloud-guest-utils,wget,curl,sudo,htop,bash-completion,ethtool,linuxptp \
   --components=main \
   --customize-hook='echo adp-xc7k160 > "$1/etc/hostname"' \
   --customize-hook='printf "127.0.0.1 localhost\n127.0.1.1 adp-xc7k160\n" > "$1/etc/hosts"' \
@@ -34,6 +36,7 @@ mmdebstrap --arch=riscv64 --mode=root --variant=minbase \
   --customize-hook='mkdir -p "$1/boot/firmware" && printf "/dev/mmcblk0p2 / ext4 defaults,noatime 0 1\n/dev/mmcblk0p1 /boot/firmware vfat defaults 0 2\n" > "$1/etc/fstab"' \
   --customize-hook='cp -r /work/modules/lib/modules "$1/lib/" && chown -R 0:0 "$1/lib/modules" && find "$1/lib/modules" -type d -exec chmod 755 {} + && find "$1/lib/modules" -type f -exec chmod 644 {} +' \
   --customize-hook='tar -C /work/overlay --owner=0 --group=0 --mode=u=rwX,go=rX -cf - . | tar -C "$1" --no-overwrite-dir -xpf -' \
+  --customize-hook='chroot "$1" systemctl enable ptp4l.service' \
   --customize-hook=': > "$1/etc/motd"' \
   --customize-hook='printf "deb http://deb.debian.org/debian trixie main\ndeb http://deb.debian.org/debian trixie-updates main\ndeb http://security.debian.org/debian-security trixie-security main\n" > "$1/etc/apt/sources.list"' \
   trixie rootfs http://deb.debian.org/debian

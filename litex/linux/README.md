@@ -90,10 +90,15 @@ The bootargs and `/etc/fstab` give the F2FS options:
 The root file system:
 
 - Debian 13 riscv64 with systemd, sshd, systemd-networkd (DHCP on eth0), systemd-resolved and
-  systemd-timesyncd. It also has `ethtool` and `linuxptp`. Root has no password on the console; SSH
-  accepts only the key of `key.pub`.
-- The board has no clock with a battery. Without timesyncd, `apt` refuses the signatures of the
+  chrony. It also has `ethtool` and `linuxptp`. Root has no password on the console; SSH accepts
+  only the key of `key.pub`.
+- The board has no clock with a battery. Without a time source, `apt` refuses the signatures of the
   archive, because the date is wrong. `fake-hwclock` keeps the last time over a reboot.
+- `ptp4l.service` (`rootfs/`) runs ptp4l on eth0, slave only, at each boot. It first sets the PTP
+  clock to the system time plus 37 s (TAI). chrony uses the PTP clock as a reference clock
+  (`rootfs/etc/chrony/conf.d/adp-phc.conf`, `refclock PHC /dev/ptp0 tai`), and its NTP pool when
+  the network has one. Without a PTP master, the PTP clock runs free from the system time.
+- chrony does not use `hwtimestamp`: the driver gives one TX stamp at a time, and ptp4l needs it.
 - `libpam-systemd` is in the package list. Without it, `pam_systemd.so` is missing, a login gets no
   `XDG_RUNTIME_DIR`, and `user@0.service` fails at each login of root.
 - `f2fs-tools` is installed. journald keeps its files in RAM (`Storage=volatile`,

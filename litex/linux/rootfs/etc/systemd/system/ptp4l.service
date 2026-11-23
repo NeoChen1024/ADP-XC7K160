@@ -1,0 +1,18 @@
+[Unit]
+Description=ptp4l, slave only, on eth0 (the PTP clock of the MAC with DMA)
+After=sys-subsystem-net-devices-eth0.device
+BindsTo=sys-subsystem-net-devices-eth0.device
+
+[Service]
+# chrony reads /dev/ptp0 as TAI. The driver sets the clock at probe, before fake-hwclock, so it
+# starts near 1970. Without a master, ptp4l does not set it, and chrony would step to 1970. Thus
+# set it to the system time plus TAI-UTC (37 s since 2017) first.
+ExecStartPre=/usr/sbin/phc_ctl eth0 set adj 37
+ExecStart=/usr/sbin/ptp4l -2 -i eth0 -s --summary_interval 6 --tx_timestamp_timeout 100
+Restart=on-failure
+RestartSec=1s
+CPUSchedulingPolicy=fifo
+CPUSchedulingPriority=99
+
+[Install]
+WantedBy=multi-user.target

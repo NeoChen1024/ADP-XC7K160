@@ -20,7 +20,9 @@ Other items:
 - The margin above the -1 marking (400 MHz, DDR3-1600): there is a result for one chip at room
   temperature only ([fpga.md](fpga.md)).
 - Debian on NaxRiscv ([litex/linux/README.md](../litex/linux/README.md)): it ran for less than one
-  day in total, at room temperature. The reference SoC at 110 MHz and DDR3-880 ran for less than
+  day in total, at room temperature. On 2026-11-23 systemd (PID 1) stopped with `Caught <ABRT>`
+  during a `daemon-reload` that the install of chrony started. The two reloads before it took
+  24.7 s each. The cause is not known. The reference SoC at 110 MHz and DDR3-880 ran for less than
   one hour of that.
 - LiteX at DDR3-1400 ([litex/README.md](../litex/README.md)): the read window is about 5 IDELAY
   taps. The memory had one test of all 1 GiB and at least two runs of 54 GiB of BIST. Long use and
